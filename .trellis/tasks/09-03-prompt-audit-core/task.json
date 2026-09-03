@@ -3,7 +3,7 @@
   "name": "prompt-audit-core",
   "title": "提示词审计核心能力",
   "description": "实现配置、密钥保护、运行时快照、Qwen3Guard、分片、故障切换与判定规则。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
