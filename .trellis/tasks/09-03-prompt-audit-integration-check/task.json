@@ -3,7 +3,7 @@
   "name": "prompt-audit-integration-check",
   "title": "提示词审计集成与数据库验证",
   "description": "完成全入口绕过检查、计费前置验证、日志防泄漏及三数据库验证矩阵。",
-  "status": "planning",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "wjxx-admin",
   "assignee": "wjxx-admin",
   "createdAt": "2026-09-03",
-  "completedAt": null,
+  "completedAt": "2026-09-03",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
@@ -20,7 +20,14 @@
   "subtasks": [],
   "children": [],
   "parent": "09-03-prompt-audit",
-  "relatedFiles": [],
-  "notes": "",
+  "relatedFiles": [
+    "model/prompt_audit_matrix_test.go",
+    "controller/prompt_audit_test.go",
+    "controller/prompt_audit_task_plugin_test.go",
+    "controller/relay_prompt_audit_test.go",
+    "relay/channel/openai/relay_realtime_audit_test.go",
+    ".trellis/tasks/09-03-prompt-audit-integration-check/research/integration-report.md"
+  ],
+  "notes": "全链路集成验收完成：父 PRD 20 项验收标准全部覆盖并实测通过；SQLite 3、MySQL 8.0、PostgreSQL 18 三真实数据库矩阵通过；后端全包单元与竞态测试、静态检查、全仓构建及 relaykit 独立构建 100% 通过；前端 test、typecheck、lint、format、copyright、i18n、build 100% 通过。",
   "meta": {}
 }

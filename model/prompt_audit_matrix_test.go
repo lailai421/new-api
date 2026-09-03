@@ -53,6 +53,14 @@ func getMatrixTargets(t *testing.T) []dbMatrixTarget {
 func TestPromptAudit_ThreeDatabaseMatrix(t *testing.T) {
 	targets := getMatrixTargets(t)
 
+	previousDB, previousLogDB := DB, LOG_DB
+	previousMainType, previousLogType := common.MainDatabaseType(), common.LogDatabaseType()
+	t.Cleanup(func() {
+		DB, LOG_DB = previousDB, previousLogDB
+		common.SetDatabaseTypes(previousMainType, previousLogType)
+		InitCol()
+	})
+
 	for _, target := range targets {
 		t.Run(target.name, func(t *testing.T) {
 			db, err := gorm.Open(target.dialector, &gorm.Config{
@@ -256,6 +264,14 @@ func TestPromptAudit_ThreeDatabaseMatrix(t *testing.T) {
 
 func TestPromptAudit_UpgradeMatrix(t *testing.T) {
 	targets := getMatrixTargets(t)
+
+	previousDB, previousLogDB := DB, LOG_DB
+	previousMainType, previousLogType := common.MainDatabaseType(), common.LogDatabaseType()
+	t.Cleanup(func() {
+		DB, LOG_DB = previousDB, previousLogDB
+		common.SetDatabaseTypes(previousMainType, previousLogType)
+		InitCol()
+	})
 
 	for _, target := range targets {
 		t.Run(target.name+"-Upgrade", func(t *testing.T) {

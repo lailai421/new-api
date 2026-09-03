@@ -30,6 +30,15 @@ func setupPromptAuditControllerWithAuth(t *testing.T) *gin.Engine {
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
 
+	previousDB, previousLogDB := model.DB, model.LOG_DB
+	previousMainType, previousLogType := common.MainDatabaseType(), common.LogDatabaseType()
+	t.Cleanup(func() {
+		model.DB, model.LOG_DB = previousDB, previousLogDB
+		common.SetDatabaseTypes(previousMainType, previousLogType)
+		model.InitCol()
+		_ = sqlDB.Close()
+	})
+
 	model.DB = db
 	model.LOG_DB = db
 	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
@@ -100,6 +109,20 @@ func setupPromptAuditControllerWithAuth(t *testing.T) *gin.Engine {
 		promptAuditRoute.GET("/events/:id", middleware.DisableCache(), GetPromptAuditEvent)
 		promptAuditRoute.DELETE("/events/:id", DeletePromptAuditEvent)
 		promptAuditRoute.POST("/events/batch-delete", BatchDeletePromptAuditEvents)
+	}
+
+	optionRoute := api.Group("/option")
+	optionRoute.Use(func(c *gin.Context) {
+		role := c.GetInt("role")
+		if role < common.RoleAdminUser {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"success": false, "message": "forbidden"})
+			return
+		}
+		c.Next()
+	})
+	{
+		optionRoute.GET("/", GetOptions)
+		optionRoute.PUT("/", UpdateOption)
 	}
 
 	return r
@@ -358,3 +381,43 @@ func TestPromptAuditController_ProbeEndpoint(t *testing.T) {
 	// Token must never be leaked in probe response!
 	assert.NotContains(t, rec.Body.String(), "probe-token-secret")
 }
+
+func TestPromptAuditController_OptionSecretIsolation(t *testing.T) {
+	r := setupPromptAuditControllerWithAuth(t)
+
+	// Inject PromptAuditConfigSecret into OptionMap
+	secretVal := `{"enabled":true,"config_version":1,"endpoints":[{"id":"ep-1","token":"super-secret-guard-token"}]}`
+	common.OptionMapRWMutex.Lock()
+	common.OptionMap[model.OptionKeyPromptAuditConfigSecret] = secretVal
+	common.OptionMapRWMutex.Unlock()
+
+	// 1. GET /api/option/ as Root must NEVER return PromptAuditConfigSecret
+	req := httptest.NewRequest(http.MethodGet, "/api/option/", nil)
+	req.Header.Set("X-Test-Role", "root")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.NotContains(t, rec.Body.String(), model.OptionKeyPromptAuditConfigSecret)
+	assert.NotContains(t, rec.Body.String(), "super-secret-guard-token")
+
+	// 2. PUT /api/option/ attempting to modify PromptAuditConfigSecret must be rejected with 403 Forbidden
+	updateBody, err := common.Marshal(map[string]any{
+		"key":   model.OptionKeyPromptAuditConfigSecret,
+		"value": `{"enabled":false}`,
+	})
+	require.NoError(t, err)
+
+	req = httptest.NewRequest(http.MethodPut, "/api/option/", bytes.NewReader(updateBody))
+	req.Header.Set("X-Test-Role", "root")
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Contains(t, rec.Body.String(), "更新提示词审计配置请使用专用管理接口")
+
+	// Verify in-memory OptionMap was not modified
+	common.OptionMapRWMutex.RLock()
+	assert.Equal(t, secretVal, common.OptionMap[model.OptionKeyPromptAuditConfigSecret])
+	common.OptionMapRWMutex.RUnlock()
+}
+

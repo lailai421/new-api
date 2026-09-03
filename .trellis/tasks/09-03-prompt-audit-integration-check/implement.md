@@ -17,7 +17,19 @@
 9. 对发现的问题在责任子任务边界内修复并重新验证，不削弱安全契约。
 10. 输出精确版本、命令、结果和剩余风险。
 
-## 完成标准
-
-只有全部依赖完成、所有验收证据齐全且三数据库矩阵通过后，才能建议父任务完成。
-
+## 完成标准与交付证据
+ 
+ 只有全部依赖完成、所有验收证据齐全且三数据库矩阵通过后，才能建议父任务完成。
+ 
+- **交付状态**: 已完成 (COMPLETED)
+- **父 PRD 验收覆盖**: 20/20 全部覆盖并通过（见 `research/integration-report.md`）。
+- **三数据库真实矩阵验证**:
+  - SQLite 3: 内存与本地文件引擎，AutoMigrate 幂等性、TEXT 类型映射、>64 KiB 加密读写、CAS 与清理全部通过。
+  - MySQL 8.0: Docker 真实实例 (`127.0.0.1:13306`)，AutoMigrate 幂等性、`longtext` 映射验证、>64 KiB 逐字符比对一致、行锁 CAS、升级测试全部通过。
+  - PostgreSQL 18: Docker 真实实例 (`127.0.0.1:15432`)，AutoMigrate 幂等性、`text` 映射验证、>64 KiB 逐字符比对一致、升级测试全部通过。
+- **全套质量命令**:
+  - 后端分包单测全部通过 (包含 `go test -race`，单条超时 <=55s)；
+  - `go vet` 零警告零错误；
+  - `relaykit` 独立构建 `cd relaykit && GOWORK=off go build ./...` 通过；
+  - 前端 Bun 检查通过 (`test`, `typecheck`, `oxlint`, `format:check`, `copyright:check`, `i18n:sync`, `build`)；
+  - 敏感数据隔离与零日志泄漏验证通过。
