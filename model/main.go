@@ -40,6 +40,10 @@ func jsonScanBytes(value interface{}) []byte {
 	}
 }
 
+func InitCol() {
+	initCol()
+}
+
 func initCol() {
 	// init common column names
 	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
@@ -364,6 +368,7 @@ func migrateDB() error {
 		&SystemTaskLock{},
 		&CasbinRule{},
 		&AuthzRole{},
+		&PromptAuditEvent{},
 	)
 	if err != nil {
 		return err

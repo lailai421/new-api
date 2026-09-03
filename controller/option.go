@@ -88,6 +88,9 @@ func GetOptions(c *gin.Context) {
 		if k == "theme.frontend" {
 			continue
 		}
+		if k == model.OptionKeyPromptAuditConfigSecret {
+			continue
+		}
 		value := common.Interface2String(v)
 		isSensitiveKey := strings.HasSuffix(k, "Token") ||
 			strings.HasSuffix(k, "Secret") ||
@@ -132,6 +135,13 @@ func UpdateOption(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"message": "无效的参数",
+		})
+		return
+	}
+	if option.Key == model.OptionKeyPromptAuditConfigSecret {
+		c.JSON(http.StatusForbidden, gin.H{
+			"success": false,
+			"message": "更新提示词审计配置请使用专用管理接口",
 		})
 		return
 	}

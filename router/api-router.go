@@ -249,6 +249,18 @@ func SetApiRouter(router *gin.Engine) {
 			taskPluginRoute.POST("/:key/dryrun", controller.DryRunTaskPlugin)
 			taskPluginRoute.DELETE("/:key/versions/:version", controller.DeleteTaskPluginVersion)
 		}
+		promptAuditRoute := apiRouter.Group("/prompt-audit")
+		promptAuditRoute.Use(middleware.RootAuth())
+		{
+			promptAuditRoute.GET("/config", controller.GetPromptAuditConfig)
+			promptAuditRoute.PUT("/config", controller.UpdatePromptAuditConfig)
+			promptAuditRoute.GET("/runtime", controller.GetPromptAuditRuntime)
+			promptAuditRoute.POST("/endpoints/probe", controller.ProbePromptAuditEndpoint)
+			promptAuditRoute.GET("/events", controller.GetPromptAuditEvents)
+			promptAuditRoute.GET("/events/:id", middleware.DisableCache(), controller.GetPromptAuditEvent)
+			promptAuditRoute.DELETE("/events/:id", controller.DeletePromptAuditEvent)
+			promptAuditRoute.POST("/events/batch-delete", controller.BatchDeletePromptAuditEvents)
+		}
 		apiRouter.GET("/task_plugin_options", middleware.AdminAuth(), middleware.RequirePermission(authz.TaskPluginBind), controller.GetTaskPluginOptions)
 		registerChannelRoutes(apiRouter)
 		registerAuthzRoutes(apiRouter)

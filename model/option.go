@@ -1,8 +1,11 @@
 package model
 
 import (
+	"context"
+	"errors"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -16,6 +19,31 @@ import (
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"gorm.io/gorm"
 )
+
+const OptionKeyPromptAuditConfigSecret = "PromptAuditConfigSecret"
+
+var ErrPromptAuditConfigConflict = errors.New("prompt audit config version conflict")
+
+var (
+	promptAuditConfigSyncHookMu sync.RWMutex
+	promptAuditConfigSyncHook   func()
+)
+
+// SetPromptAuditConfigSyncHook sets a callback to be triggered when PromptAuditConfigSecret changes.
+func SetPromptAuditConfigSyncHook(hook func()) {
+	promptAuditConfigSyncHookMu.Lock()
+	defer promptAuditConfigSyncHookMu.Unlock()
+	promptAuditConfigSyncHook = hook
+}
+
+func triggerPromptAuditConfigSyncHook() {
+	promptAuditConfigSyncHookMu.RLock()
+	hook := promptAuditConfigSyncHook
+	promptAuditConfigSyncHookMu.RUnlock()
+	if hook != nil {
+		go hook()
+	}
+}
 
 type Option struct {
 	Key   string `json:"key" gorm:"primaryKey"`
@@ -216,6 +244,9 @@ func SyncOptions(frequency int) {
 }
 
 func validateOptionValue(key string, value string) error {
+	if key == OptionKeyPromptAuditConfigSecret {
+		return errors.New("updating prompt audit config secret via generic option API is forbidden")
+	}
 	if key == operation_setting.ToolPriceOptionKey {
 		return operation_setting.ValidateToolPricesJSON(value)
 	}
@@ -299,6 +330,11 @@ func updateOptionMap(key string, value string) (err error) {
 	// 检查是否是模型配置 - 使用更规范的方式处理
 	if handleConfigUpdate(key, value) {
 		return nil // 已由配置系统处理
+	}
+
+	if key == OptionKeyPromptAuditConfigSecret {
+		triggerPromptAuditConfigSyncHook()
+		return nil
 	}
 
 	// 处理传统配置项...
@@ -663,4 +699,108 @@ func handleConfigUpdate(key, value string) bool {
 	}
 
 	return true // 已处理
+}
+
+func getKeyCol() string {
+	if commonKeyCol != "" {
+		return commonKeyCol
+	}
+	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
+		return `"key"`
+	}
+	return "`key`"
+}
+
+// GetPromptAuditConfigRaw reads the current prompt audit config JSON string from the Option table.
+// If the Option does not exist, it returns "", nil.
+func GetPromptAuditConfigRaw(ctx context.Context) (string, error) {
+	var opt Option
+	err := DB.WithContext(ctx).Where(getKeyCol()+" = ?", OptionKeyPromptAuditConfigSecret).First(&opt).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+	return opt.Value, nil
+}
+
+// SavePromptAuditConfigCAS performs a compare-and-swap update on the PromptAuditConfigSecret Option
+// inside a single database transaction protected by lockForUpdate.
+//
+// mutateFn is executed while holding the row lock. It receives the current raw JSON (empty if not created yet)
+// and current version (0 if not created yet). It must return the new JSON to persist and the new version.
+// If expectedVersion does not match the actual current version, ErrPromptAuditConfigConflict is returned.
+func SavePromptAuditConfigCAS(
+	ctx context.Context,
+	expectedVersion int64,
+	mutateFn func(currentRaw string, currentVersion int64) (newRaw string, newVersion int64, err error),
+) (int64, error) {
+	var finalVersion int64
+	var finalRaw string
+	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var opt Option
+		err := lockForUpdate(tx).Where(getKeyCol()+" = ?", OptionKeyPromptAuditConfigSecret).First(&opt).Error
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				// Record does not exist yet. Initial creation semantics:
+				// expectedVersion must be 0 (initial) or 1.
+				if expectedVersion != 0 && expectedVersion != 1 {
+					return ErrPromptAuditConfigConflict
+				}
+				newRaw, newVersion, err := mutateFn("", 0)
+				if err != nil {
+					return err
+				}
+				opt = Option{
+					Key:   OptionKeyPromptAuditConfigSecret,
+					Value: newRaw,
+				}
+				if err := tx.Create(&opt).Error; err != nil {
+					return ErrPromptAuditConfigConflict
+				}
+				finalVersion = newVersion
+				finalRaw = newRaw
+				return nil
+			}
+			return err
+		}
+
+		// Record exists. Extract current config_version from existing JSON.
+		var header struct {
+			ConfigVersion int64 `json:"config_version"`
+		}
+		if opt.Value != "" {
+			if err := common.Unmarshal([]byte(opt.Value), &header); err != nil {
+				common.SysError("failed to parse current prompt audit config_version: " + err.Error())
+			}
+		}
+
+		if header.ConfigVersion != expectedVersion {
+			return ErrPromptAuditConfigConflict
+		}
+
+		newRaw, newVersion, err := mutateFn(opt.Value, header.ConfigVersion)
+		if err != nil {
+			return err
+		}
+
+		opt.Value = newRaw
+		if err := tx.Save(&opt).Error; err != nil {
+			return err
+		}
+		finalVersion = newVersion
+		finalRaw = newRaw
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	// Update in-memory OptionMap
+	common.OptionMapRWMutex.Lock()
+	common.OptionMap[OptionKeyPromptAuditConfigSecret] = finalRaw
+	common.OptionMapRWMutex.Unlock()
+
+	return finalVersion, nil
 }

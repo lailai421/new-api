@@ -49,6 +49,11 @@ var auditContentTemplates = map[string]string{
 
 	"subscription.plan_reset":      "Reset active subscriptions for plan ${plan_id}",
 	"subscription.user_plan_reset": "Reset active plan ${plan_id} subscriptions for user ${target_user_id}",
+
+	"prompt_audit.config_update":       "Updated prompt audit config to version ${config_version}",
+	"prompt_audit.endpoint_probe":      "Probed prompt audit endpoint ${endpoint_id}",
+	"prompt_audit.event_delete":        "Deleted prompt audit event ${id}",
+	"prompt_audit.event_batch_delete":  "Batch deleted ${count} prompt audit events",
 }
 
 // auditContentEN 按 action 模板渲染英文兜底文本；未登记的 action 退回 action 本身。
