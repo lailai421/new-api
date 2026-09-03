@@ -47,6 +47,7 @@
   <a href="#-快速开始">快速开始</a> •
   <a href="#-主要特性">主要特性</a> •
   <a href="#-部署">部署</a> •
+  <a href="#️-本地开发与功能验证">本地开发</a> •
   <a href="#-文档">文档</a> •
   <a href="#-帮助支持">帮助</a>
 </p>
@@ -426,6 +427,133 @@ Token、Origin 校验和 PAT 契约见[用户鉴权与登录会话](./docs/authe
 **缓存配置：**
 - `REDIS_CONN_STRING`：Redis 缓存（推荐）
 - `MEMORY_CACHE_ENABLED`：内存缓存
+
+---
+
+## 🛠️ 本地开发与功能验证
+
+本项目由 **Go 后端（Gin + GORM）** 与 **React 前端（React 19 + Rsbuild + Bun）** 组成。支持前后端分离热更新开发，也可打包为单一可执行文件运行。
+
+### 📋 环境要求
+
+| 工具 | 建议版本 | 说明 |
+|------|---------|------|
+| **Go** | 1.22+（建议 1.25+） | 后端开发与编译 |
+| **Bun** | 最新稳定版 | 前端包管理器（优于 npm/yarn/pnpm） |
+| **Docker / Compose** | - | 可选，用于快速拉起包含 PostgreSQL 与 Redis 的容器化测试环境 |
+
+### 🚀 开发启动方式
+
+#### 方式 1：轻量级本地原生运行（推荐，零外部依赖）
+
+默认使用内置的 **SQLite** 与内存缓存，无需安装和配置 MySQL、PostgreSQL 或 Redis：
+
+1. **启动后端服务**：
+   ```bash
+   # 普通启动（默认监听 :3000 端口）
+   go run main.go
+
+   # 或开启 Debug 模式（输出详细 SQL 与请求日志）
+   DEBUG=true GIN_MODE=debug go run main.go
+   ```
+   - 后端服务地址：`http://localhost:3000`
+   - 首次运行会自动生成本地 SQLite 数据库文件（`one-api.db`）并初始化表结构。
+   - 首次启动会自动创建初始管理员账号：
+     - **用户名**：`root`
+     - **密码**：`123456`
+
+2. **启动前端开发服务器（支持 HMR 热更新）**：
+   ```bash
+   cd web
+   bun install
+   bun run dev -- --port 5173
+   # 或在项目根目录运行：make dev-web
+   ```
+   - 前端访问地址：`http://localhost:5173`
+   - **请求代理机制**：`web/rsbuild.config.ts` 已内置代理，会自动将前端发往 `/api`、`/v1`、`/mj`、`/pg` 的请求转发至后端的 `http://localhost:3000`。
+   - 本地 HTTP 开发模式下，后端保持 `SESSION_COOKIE_SECURE=false`（默认值），以确保跨端口（`:5173` -> `:3000`）代理下的 Session 鉴权正常工作。
+
+#### 方式 2：Docker Compose 容器化环境（完整中间件栈）
+
+若需在包含真实 PostgreSQL 与 Redis 的环境下进行开发，可使用项目自带的编排配置与 Makefile：
+
+```bash
+# 启动 PostgreSQL + Redis + 基于本地代码编译的后端容器
+make dev-api
+
+# 启动本地前端开发服务器
+make dev-web
+
+# （也可使用 make dev 同时启动前后端）
+```
+
+- **重编后端容器**：修改 Go 代码后，执行 `make dev-api-rebuild`
+- **重置初始化向导**：如需重新调试系统初始化流程（Setup Wizard），执行 `make reset-setup`
+
+---
+
+### 🧪 功能验证流程
+
+#### 1. Web 控制台与业务链路验证
+
+1. 打开浏览器访问前端开发页面 `http://localhost:5173`，使用 `root` / `123456` 登录。
+2. **渠道配置与连通性测试**：
+   - 进入 **「渠道」** 页面，添加待验证的上游渠道（如 OpenAI、Claude、Gemini 或自定义 Upstream）。
+   - 点击渠道操作栏的 **「测试」** 按钮，验证后端与目标上游的连通性及状态码。
+3. **令牌生成**：
+   - 进入 **「令牌」** 页面，新增一个测试 API Key（`sk-...`），并配置额度及绑定模型。
+4. **Relay 代理接口调用验证**：
+   - 使用终端或 API 工具（如 curl、Postman、Cherry Studio、NextChat）验证网关接口：
+     ```bash
+     curl http://localhost:3000/v1/chat/completions \
+       -H "Content-Type: application/json" \
+       -H "Authorization: Bearer sk-your-token" \
+       -d '{
+         "model": "gpt-4o-mini",
+         "messages": [{"role": "user", "content": "Hello!"}]
+       }'
+     ```
+5. **日志与计费核对**：
+   - 进入 **「日志」** 页面，检查刚才的调用记录、上游耗时、Token 消耗及额度扣减是否准确。
+
+#### 2. 代码质量与自动化测试验证
+
+在提交代码前，需执行相关测试与规范检查（遵循项目质量规范）：
+
+- **后端测试与独立性校验**：
+  ```bash
+  # 运行全量测试
+  make test
+
+  # 单独验证 relaykit 模块（规范要求：relaykit 必须可独立编译，不得依赖主模块）
+  cd relaykit && GOWORK=off go build ./... && GOWORK=off go test ./...
+  ```
+  *(注：若改动涉及 GORM 模型或数据库查询，必须确保能在 SQLite、MySQL 与 PostgreSQL 下均正常运行)*
+
+- **前端代码检查与测试**：
+  ```bash
+  cd web
+  bun run typecheck    # TypeScript 类型检查
+  bun run lint         # oxlint 静态代码检查
+  bun run test         # Vitest 单元测试
+  bun run i18n:sync    # 国际化文案同步（如新增或修改了 UI 文案）
+  ```
+
+#### 3. 生产打包验证（前后端一体化二进制）
+
+验证单二进制文件嵌入前端资源后的打包与运行效果：
+
+```bash
+# 1. 编译前端静态资源至 web/dist
+make build-web
+
+# 2. 编译嵌入前端静态资源的 Go 单二进制文件
+go build -ldflags "-s -w -X 'github.com/QuantumNous/new-api/common.Version=dev'" -o new-api
+
+# 3. 运行独立二进制文件验证
+./new-api --port 3000
+```
+访问 `http://localhost:3000` 即可验证无独立前端服务时，单文件服务全流程运行是否正常。
 
 ---
 
