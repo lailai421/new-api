@@ -44,6 +44,9 @@ func getTokenEncoder(model string) tokenizer.Codec {
 	// Create new encoder
 	modelCodec, err := tokenizer.ForModel(tokenizer.Model(model))
 	if err != nil {
+		if defaultTokenEncoder == nil {
+			InitTokenEncoders()
+		}
 		// Cache the default encoder for this model to avoid repeated failures
 		tokenEncoderMap[model] = defaultTokenEncoder
 		return defaultTokenEncoder
@@ -57,6 +60,15 @@ func getTokenEncoder(model string) tokenizer.Codec {
 func getTokenNum(tokenEncoder tokenizer.Codec, text string) int {
 	if text == "" {
 		return 0
+	}
+	if tokenEncoder == nil {
+		if defaultTokenEncoder == nil {
+			InitTokenEncoders()
+		}
+		tokenEncoder = defaultTokenEncoder
+	}
+	if tokenEncoder == nil {
+		return len([]rune(text))
 	}
 	tkm, _ := tokenEncoder.Count(text)
 	return tkm

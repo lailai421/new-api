@@ -140,3 +140,11 @@ func (m *Manager) Reload(ctx context.Context) error {
 	m.loadedAt = &now
 	return nil
 }
+
+// SetActiveForTest 提供测试专用的配置与降级状态注入
+func (m *Manager) SetActiveForTest(active ActiveConfig, degraded bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.active = active
+	m.degraded = degraded
+}

@@ -171,6 +171,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	if priceData.FreeModel {
 		logger.LogInfo(c, fmt.Sprintf("模型 %s 免费，跳过预扣费", relayInfo.OriginModelName))
+	} else if relayFormat == types.RelayFormatOpenAIRealtime && promptaudit.ShouldAuditRealtime(c, relayInfo) {
+		// 提示词审计开启且命中分组时，特化延迟预扣费：
+		// 委托到首个文本事件通过审计并准备拨号业务上游之前执行，
+		// 确保首帧 Block 或门禁异常时，业务上游拨号为 0、帧数为 0、预扣费次数为 0。
+		relayInfo.NeedDeferredPreConsume = true
+		relayInfo.DeferredPreConsumeQuota = priceData.QuotaToPreConsume
 	} else {
 		newAPIError = service.PreConsumeBilling(c, priceData.QuotaToPreConsume, relayInfo)
 		if newAPIError != nil {
