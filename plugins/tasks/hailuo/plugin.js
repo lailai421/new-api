@@ -45,6 +45,7 @@ export const meta = {
     { label: "01-series 720P 6s", facts: { seconds: 6, resolution: "720P" } },
   ],
   protocols: [{ name: "openai_responses", supports: ["stream", "sync", "background"] }, "openai_video"],
+  auditTextPaths: ["/prompt"],
 };
 
 function trimmed(value) {

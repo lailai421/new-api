@@ -28,6 +28,7 @@ export const meta = {
     { method: "POST", path: "/suno/fetch", type: "dynamic", decode: "decodeBatch", render: "renderTasks" },
     { method: "GET", path: "/suno/fetch/:task_id", type: "query", render: "renderTask" },
   ],
+  auditTextPaths: ["/prompt", "/gpt_description_prompt", "/tags", "/title"],
 };
 
 function trimmed(value) {

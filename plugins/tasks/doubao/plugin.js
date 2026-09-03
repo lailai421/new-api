@@ -60,6 +60,7 @@ export const meta = {
     { method: "GET", path: "/doubao/api/v3/contents/generations/tasks/:task_id", type: "query", render: "taskStatus" },
   ],
   protocols: [{ name: "openai_responses", supports: ["stream", "sync", "background"] }, "openai_video"],
+  auditTextPaths: ["/prompt"],
 };
 
 function trimmed(value) {

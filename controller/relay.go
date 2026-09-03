@@ -591,6 +591,43 @@ type taskSubmissionOutcome struct {
 	RelayInfo *relaycommon.RelayInfo
 }
 
+func resolveTaskAuditMeta(c *gin.Context) promptaudit.TaskAuditMeta {
+	if pinnedValue, exists := c.Get(pluginruntime.ContextKeyPinnedRoute); exists {
+		if pinned, ok := pinnedValue.(pluginruntime.PinnedRoute); ok && pinned.Plugin != nil {
+			return promptaudit.TaskAuditMeta{
+				PluginKey:           pinned.Plugin.Meta.Key,
+				AuditTextPaths:      pinned.Plugin.Meta.AuditTextPaths,
+				HasSubmitCapability: pinned.Plugin.Meta.HasSubmitCapability(),
+				Found:               true,
+			}
+		}
+	}
+	if pinnedValue, exists := c.Get(pluginruntime.ContextKeyPinnedEndpoint); exists {
+		if pinned, ok := pinnedValue.(pluginruntime.PinnedEndpoint); ok && pinned.Plugin != nil {
+			return promptaudit.TaskAuditMeta{
+				PluginKey:           pinned.Plugin.Meta.Key,
+				AuditTextPaths:      pinned.Plugin.Meta.AuditTextPaths,
+				HasSubmitCapability: pinned.Plugin.Meta.HasSubmitCapability(),
+				Found:               true,
+			}
+		}
+	}
+	if pinnedValue, exists := c.Get(pluginruntime.ContextKeyPinnedPlugin); exists {
+		if pinned, ok := pinnedValue.(pluginruntime.PinnedPlugin); ok && pinned.Plugin != nil {
+			return promptaudit.TaskAuditMeta{
+				PluginKey:           pinned.Plugin.Meta.Key,
+				AuditTextPaths:      pinned.Plugin.Meta.AuditTextPaths,
+				HasSubmitCapability: pinned.Plugin.Meta.HasSubmitCapability(),
+				Found:               true,
+			}
+		}
+	}
+	return promptaudit.TaskAuditMeta{
+		HasSubmitCapability: true,
+		Found:               false,
+	}
+}
+
 func RelayTask(c *gin.Context) {
 	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatTask, nil, nil)
 	if err != nil {
@@ -603,6 +640,12 @@ func RelayTask(c *gin.Context) {
 	}
 	if action := c.GetString("task_action"); action != "" {
 		relayInfo.Action = action
+	}
+
+	auditMeta := resolveTaskAuditMeta(c)
+	if taskErr := promptaudit.CheckTaskRequest(c, relayInfo, auditMeta); taskErr != nil {
+		respondTaskSubmissionError(c, taskErr)
+		return
 	}
 
 	if taskErr := relay.ResolveOriginTask(c, relayInfo); taskErr != nil {

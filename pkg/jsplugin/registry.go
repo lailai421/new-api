@@ -30,6 +30,9 @@ const (
 	maxLocalizedTextLocales       = 16
 	maxMetaDescriptionRunes       = 512
 	maxUsageFieldDescriptionRunes = 256
+	maxAuditTextPaths             = 16
+	maxAuditTextPathRunes         = 256
+	maxAuditTextPathDepth         = 10
 )
 
 var pluginKeyPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
@@ -75,22 +78,23 @@ func (t *LocalizedText) UnmarshalJSON(data []byte) error {
 }
 
 type Meta struct {
-	APIVersion    int                         `json:"apiVersion"`
-	Key           string                      `json:"key"`
-	Name          string                      `json:"name"`
-	Icon          string                      `json:"icon,omitempty"`
-	Description   LocalizedText               `json:"description,omitempty"`
-	Version       string                      `json:"version"`
-	Author        AuthorMeta                  `json:"author"`
-	ChannelTypes  []int                       `json:"channelTypes,omitempty"`
-	Models        []string                    `json:"models"`
-	FetchMode     string                      `json:"fetchMode"`
-	AllowedHosts  []string                    `json:"allowedHosts"`
-	Routes        []Route                     `json:"routes"`
-	Protocols     []ProtocolClaim             `json:"protocols"`
-	UsageSchema   map[string]UsageFieldSchema `json:"usageSchema,omitempty"`
-	UsageExamples []UsageExample              `json:"usageExamples,omitempty"`
-	Auth          AuthMeta                    `json:"auth"`
+	APIVersion     int                         `json:"apiVersion"`
+	Key            string                      `json:"key"`
+	Name           string                      `json:"name"`
+	Icon           string                      `json:"icon,omitempty"`
+	Description    LocalizedText               `json:"description,omitempty"`
+	Version        string                      `json:"version"`
+	Author         AuthorMeta                  `json:"author"`
+	ChannelTypes   []int                       `json:"channelTypes,omitempty"`
+	Models         []string                    `json:"models"`
+	FetchMode      string                      `json:"fetchMode"`
+	AllowedHosts   []string                    `json:"allowedHosts"`
+	Routes         []Route                     `json:"routes"`
+	Protocols      []ProtocolClaim             `json:"protocols"`
+	UsageSchema    map[string]UsageFieldSchema `json:"usageSchema,omitempty"`
+	UsageExamples  []UsageExample              `json:"usageExamples,omitempty"`
+	Auth           AuthMeta                    `json:"auth"`
+	AuditTextPaths []string                    `json:"auditTextPaths,omitempty"`
 }
 
 // ProtocolSupports reports whether the named protocol claim includes mode.
@@ -101,6 +105,27 @@ func (m Meta) ProtocolSupports(protocol, mode string) bool {
 		}
 	}
 	return false
+}
+
+// HasSubmitCapability reports whether the plugin defines any submit entry points
+// (declarative submit/dynamic routes, protocol create operations, or channel types).
+func (m Meta) HasSubmitCapability() bool {
+	for _, r := range m.Routes {
+		if r.Type == RouteTypeSubmit || r.Type == RouteTypeDynamic {
+			return true
+		}
+	}
+	for _, p := range m.Protocols {
+		def, known := HostProtocol(p.Name)
+		if known {
+			for _, op := range def.Operations {
+				if op.Name == "create" {
+					return true
+				}
+			}
+		}
+	}
+	return len(m.ChannelTypes) > 0
 }
 
 // UsageExample is a display-only pricing sample: a labeled complete vector
@@ -858,6 +883,9 @@ func cloneMeta(meta Meta) Meta {
 		meta.UsageSchema = usageSchema
 	}
 	meta.UsageExamples = cloneUsageExamples(meta.UsageExamples)
+	if meta.AuditTextPaths != nil {
+		meta.AuditTextPaths = append([]string(nil), meta.AuditTextPaths...)
+	}
 	return meta
 }
 
@@ -946,7 +974,7 @@ func decodeMeta(value any) (Meta, error) {
 	}
 	for field := range object {
 		switch field {
-		case "apiVersion", "key", "name", "icon", "description", "version", "author", "channelTypes", "channelType", "compatibleChannelTypes", "models", "fetchMode", "allowedHosts", "routes", "protocols", "usageSchema", "usageExamples", "auth", "endpoints", "submitPaths", "actions":
+		case "apiVersion", "key", "name", "icon", "description", "version", "author", "channelTypes", "channelType", "compatibleChannelTypes", "models", "fetchMode", "allowedHosts", "routes", "protocols", "usageSchema", "usageExamples", "auth", "endpoints", "submitPaths", "actions", "auditTextPaths":
 		default:
 			return Meta{}, fmt.Errorf("plugin meta has unknown field %q", field)
 		}
@@ -1031,6 +1059,12 @@ func decodeMeta(value any) (Meta, error) {
 	}
 	if usageExamples, exists := object["usageExamples"]; exists {
 		meta.UsageExamples, err = decodeUsageExamples(usageExamples)
+		if err != nil {
+			return Meta{}, err
+		}
+	}
+	if _, exists := object["auditTextPaths"]; exists {
+		meta.AuditTextPaths, err = strictStringSlice(object, "auditTextPaths")
 		if err != nil {
 			return Meta{}, err
 		}
@@ -1250,7 +1284,74 @@ func normalizeV1Meta(meta *Meta) error {
 	if err := validateUsageExamples(meta.UsageSchema, meta.UsageExamples); err != nil {
 		return err
 	}
+	if meta.AuditTextPaths != nil {
+		paths, err := validateAuditTextPaths(meta.AuditTextPaths)
+		if err != nil {
+			return err
+		}
+		meta.AuditTextPaths = paths
+	}
 	return nil
+}
+
+func validateAuditTextPaths(paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	if len(paths) > maxAuditTextPaths {
+		return nil, fmt.Errorf("plugin meta auditTextPaths must not exceed %d paths", maxAuditTextPaths)
+	}
+	normalized := make([]string, 0, len(paths))
+	seen := make(map[string]struct{}, len(paths))
+	for _, p := range paths {
+		trimmed := strings.TrimSpace(p)
+		if trimmed == "" {
+			return nil, fmt.Errorf("plugin meta auditTextPaths entries must be non-empty")
+		}
+		if trimmed != p {
+			return nil, fmt.Errorf("plugin meta auditTextPaths entry %q must not have leading or trailing whitespace", p)
+		}
+		if utf8.RuneCountInString(p) > maxAuditTextPathRunes {
+			return nil, fmt.Errorf("plugin meta auditTextPaths entry %q must not exceed %d characters", p, maxAuditTextPathRunes)
+		}
+		if !strings.HasPrefix(p, "/") {
+			return nil, fmt.Errorf("plugin meta auditTextPaths entry %q must start with '/'", p)
+		}
+		tokens := strings.Split(p, "/")
+		segments := tokens[1:]
+		if len(segments) == 0 || (len(segments) == 1 && segments[0] == "") {
+			return nil, fmt.Errorf("plugin meta auditTextPaths entry %q must specify at least one path segment", p)
+		}
+		if len(segments) > maxAuditTextPathDepth {
+			return nil, fmt.Errorf("plugin meta auditTextPaths entry %q must not exceed depth %d", p, maxAuditTextPathDepth)
+		}
+		for _, seg := range segments {
+			if seg == "" {
+				return nil, fmt.Errorf("plugin meta auditTextPaths entry %q has empty segment (consecutive slashes or trailing slash not allowed)", p)
+			}
+			if strings.ContainsAny(seg, "*?#[]()$") {
+				return nil, fmt.Errorf("plugin meta auditTextPaths entry %q contains forbidden characters", p)
+			}
+			for _, r := range seg {
+				if unicode.IsControl(r) {
+					return nil, fmt.Errorf("plugin meta auditTextPaths entry %q contains control characters", p)
+				}
+			}
+			for i := 0; i < len(seg); i++ {
+				if seg[i] == '~' {
+					if i+1 >= len(seg) || (seg[i+1] != '0' && seg[i+1] != '1') {
+						return nil, fmt.Errorf("plugin meta auditTextPaths entry %q contains invalid escape '~' (only ~0 and ~1 are valid)", p)
+					}
+					i++
+				}
+			}
+		}
+		if _, exists := seen[p]; !exists {
+			seen[p] = struct{}{}
+			normalized = append(normalized, p)
+		}
+	}
+	return normalized, nil
 }
 
 func decodeUsageSchema(value any) (map[string]UsageFieldSchema, error) {

@@ -36,6 +36,7 @@ export const meta = {
     { method: "GET", path: "/kling/v1/videos/text2video/:task_id", type: "query", render: "taskStatus" },
     { method: "GET", path: "/kling/v1/videos/image2video/:task_id", type: "query", render: "taskStatus" },
   ],
+  auditTextPaths: ["/prompt", "/negative_prompt"],
 };
 
 // Official unit consumption (units per output video second), not a currency price.

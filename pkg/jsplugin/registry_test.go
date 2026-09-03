@@ -858,4 +858,120 @@ func TestLocalizedTextContract(t *testing.T) {
 		assert.Equal(t, "Video generation via the vendor API", plugin.Meta.Description["en"])
 		assert.Equal(t, "Generated media duration.", plugin.Meta.UsageSchema["seconds"].Description["en"])
 	})
+
+	t.Run("auditTextPaths validation and cloning", func(t *testing.T) {
+		validMeta := Meta{
+			APIVersion:     APIVersion1,
+			Key:            "audit-valid",
+			Name:           "Audit Valid",
+			Version:        "1.0.0",
+			Author:         AuthorMeta{Name: "tester"},
+			FetchMode:      "per_task",
+			Models:         []string{"m1"},
+			AuditTextPaths: []string{"/prompt", "/negative_prompt", "/nested/field", "/escape~1slash~0tilde", "/prompt"},
+		}
+		require.NoError(t, ValidateV1Meta(validMeta))
+
+		cloned := cloneMeta(validMeta)
+		cloned.AuditTextPaths[0] = "/modified"
+		assert.Equal(t, "/prompt", validMeta.AuditTextPaths[0])
+
+		// normalize deduplicates
+		normalized := cloneMeta(validMeta)
+		require.NoError(t, normalizeV1Meta(&normalized))
+		assert.Equal(t, []string{"/prompt", "/negative_prompt", "/nested/field", "/escape~1slash~0tilde"}, normalized.AuditTextPaths)
+
+		// Invalid cases
+		testCases := []struct {
+			name  string
+			paths []string
+		}{
+			{"missing leading slash", []string{"prompt"}},
+			{"empty path", []string{""}},
+			{"whitespace only", []string{"   "}},
+			{"empty segment trailing", []string{"/prompt/"}},
+			{"empty segment double slash", []string{"/a//b"}},
+			{"forbidden char wildcard", []string{"/prompt/*"}},
+			{"forbidden char bracket", []string{"/items[0]"}},
+			{"forbidden char dollar", []string{"/items/$text"}},
+			{"invalid escape", []string{"/escape~2"}},
+			{"depth too deep", []string{"/1/2/3/4/5/6/7/8/9/10/11"}},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				badMeta := validMeta
+				badMeta.AuditTextPaths = tc.paths
+				err := ValidateV1Meta(badMeta)
+				require.Error(t, err)
+			})
+		}
+
+		// Too many paths (>16)
+		tooMany := make([]string, 17)
+		for i := range tooMany {
+			tooMany[i] = fmt.Sprintf("/path_%d", i)
+		}
+		badMeta := validMeta
+		badMeta.AuditTextPaths = tooMany
+		require.Error(t, ValidateV1Meta(badMeta))
+
+		// Path too long (>256 runes)
+		longPath := "/" + strings.Repeat("a", 256)
+		badMeta = validMeta
+		badMeta.AuditTextPaths = []string{longPath}
+		require.Error(t, ValidateV1Meta(badMeta))
+	})
+
+	t.Run("UncoveredSubmitPlugins detection", func(t *testing.T) {
+		registry := NewRegistry()
+		// Plugin 1: Submit route with auditTextPaths -> Covered
+		_, err := registry.Register(
+			routingTestPluginSource(
+				"plugin-covered",
+				0,
+				`["model-covered"]`,
+				`auditTextPaths: ["/prompt"],
+				routes: [{method: "POST", path: "/test/covered/submit", type: "submit", decode: "dec", render: "ren"}],`,
+				`export const native = { dec: (ctx) => ({ kind: "submit", model: "model-covered" }), ren: (ctx, t) => ({}) };`,
+			),
+			Options{},
+		)
+		require.NoError(t, err)
+
+		// Plugin 2: Submit route WITHOUT auditTextPaths -> Uncovered
+		_, err = registry.Register(
+			routingTestPluginSource(
+				"plugin-uncovered",
+				0,
+				`["model-uncovered"]`,
+				`routes: [{method: "POST", path: "/test/uncovered/submit", type: "submit", decode: "dec", render: "ren"}],`,
+				`export const native = { dec: (ctx) => ({ kind: "submit", model: "model-uncovered" }), ren: (ctx, t) => ({}) };`,
+			),
+			Options{},
+		)
+		require.NoError(t, err)
+
+		// Plugin 3: Pure query route WITHOUT auditTextPaths -> Not in uncovered (query only)
+		_, err = registry.Register(
+			routingTestPluginSource(
+				"plugin-query-only",
+				0,
+				`["model-query"]`,
+				`routes: [{method: "GET", path: "/test/query/:task_id", type: "query", render: "ren"}],`,
+				`export const native = { ren: (ctx, t) => ({}) };`,
+			),
+			Options{},
+		)
+		require.NoError(t, err)
+
+		gen := registry.Generation()
+		uncovered := UncoveredSubmitPlugins(gen)
+		assert.Equal(t, []string{"plugin-uncovered"}, uncovered)
+
+		// Unregistering plugin-uncovered removes it from the generation
+		require.NoError(t, registry.Unregister("plugin-uncovered"))
+		genAfterUnregister := registry.Generation()
+		uncoveredAfterUnregister := UncoveredSubmitPlugins(genAfterUnregister)
+		assert.NotContains(t, uncoveredAfterUnregister, "plugin-uncovered")
+	})
 }

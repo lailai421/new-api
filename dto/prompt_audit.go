@@ -1,5 +1,7 @@
 package dto
 
+import "time"
+
 // PromptAuditEndpointUpdateRequest 用于更新单个端点配置的 DTO。
 type PromptAuditEndpointUpdateRequest struct {
 	ID          string `json:"id"`
@@ -117,4 +119,16 @@ type PromptAuditEventDetailResponse struct {
 // PromptAuditBatchDeleteRequest 批量删除请求 DTO。
 type PromptAuditBatchDeleteRequest struct {
 	IDs []int64 `json:"ids"`
+}
+
+// PromptAuditRuntimeResponse 运行时状态响应 DTO。
+type PromptAuditRuntimeResponse struct {
+	Mode                  string     `json:"mode"`
+	ExpectedConfigVersion int64      `json:"expected_config_version"`
+	ActiveConfigVersion   int64      `json:"active_config_version"`
+	ConfigLoadedAt        *time.Time `json:"config_loaded_at,omitempty"`
+	ConfigLoadError       string     `json:"config_load_error,omitempty"`
+	Degraded              bool       `json:"degraded"`
+	EnabledEndpoints      int        `json:"enabled_endpoints"`
+	UncoveredPlugins      []string   `json:"uncovered_plugins"`
 }

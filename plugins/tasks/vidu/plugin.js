@@ -38,6 +38,7 @@ export const meta = {
     { label: "2.0 8s 720p", facts: { credits: 0, duration: 8, resolution: "720p" } },
   ],
   protocols: [{ name: "openai_responses", supports: ["stream", "sync", "background"] }, "openai_video"],
+  auditTextPaths: ["/prompt"],
 };
 
 const RESOLUTIONS = ["360p", "540p", "720p", "1080p"];

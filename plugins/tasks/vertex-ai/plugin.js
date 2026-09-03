@@ -41,6 +41,7 @@ export const meta = {
     { label: "8s 4k audio", facts: { seconds: 8, resolution: "4k", generate_audio: true } },
   ],
   protocols: [{ name: "openai_responses", supports: ["stream", "sync", "background"] }, "openai_video"],
+  auditTextPaths: ["/prompt"],
 };
 
 function trimmed(value) {

@@ -24,6 +24,7 @@ export const meta = {
     },
   },
   protocols: [{ name: "openai_responses", supports: ["stream", "sync", "background"] }, "openai_video"],
+  auditTextPaths: ["/prompt"],
 };
 
 function trimmed(value) {

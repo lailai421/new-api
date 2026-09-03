@@ -223,3 +223,223 @@ func toMjError(code string, statusCode int) *taskdto.MidjourneyResponse {
 		Result:      code,
 	}
 }
+
+// ContextKeyTaskAuditDone 标记该请求已完成提示词审计门禁，避免重复执行。
+const ContextKeyTaskAuditDone = "prompt_audit_done"
+
+func toTaskError(code string, statusCode int) *taskdto.TaskError {
+	return &taskdto.TaskError{
+		Code:       code,
+		Message:    code,
+		StatusCode: statusCode,
+		LocalError: true,
+	}
+}
+
+// CheckTaskRequest 在业务 Task 提交前执行同步审计门禁。
+func CheckTaskRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo, auditMeta TaskAuditMeta) *taskdto.TaskError {
+	if c != nil && c.GetBool(ContextKeyTaskAuditDone) {
+		return nil
+	}
+
+	mgr := GetManager()
+	if mgr == nil {
+		return nil
+	}
+
+	if mgr.IsDegraded() {
+		return toTaskError(ErrorCodeConfigDegraded, http.StatusServiceUnavailable)
+	}
+
+	cfg := mgr.Active()
+	if !cfg.Enabled {
+		return nil
+	}
+
+	group := extractGroup(c, relayInfo)
+	if !cfg.MatchesGroup(group) {
+		return nil
+	}
+
+	var taskRequestBody any
+	if c != nil {
+		if reqVal, exists := c.Get("task_request"); exists {
+			taskRequestBody = reqVal
+		}
+	}
+
+	segments, err := ExtractTaskRequest(taskRequestBody, auditMeta)
+	if errors.Is(err, ErrNoPrompt) {
+		return nil
+	}
+	if err != nil {
+		return toTaskError(ErrorCodeUnsupportedProtocol, http.StatusServiceUnavailable)
+	}
+
+	modelName := ""
+	if relayInfo != nil {
+		modelName = relayInfo.OriginModelName
+	}
+	if modelName == "" && c != nil {
+		modelName = c.GetString("resolved_task_model")
+	}
+
+	snapshot, err := BuildPromptSnapshot(c, relayInfo, "task", modelName, segments, cfg.LatestTurnOnly)
+	if err != nil {
+		if errors.Is(err, ErrNoPrompt) {
+			return nil
+		}
+		return toTaskError(ErrorCodeUnsupportedProtocol, http.StatusServiceUnavailable)
+	}
+
+	evaluator := GetEvaluator()
+	if evaluator == nil {
+		return toTaskError(ErrorCodeUnavailable, http.StatusServiceUnavailable)
+	}
+
+	ctx := getRequestContext(c)
+	decision, evalErr := evaluator.Evaluate(ctx, cfg, snapshot)
+	if evalErr != nil {
+		code := ErrorCodeUnavailable
+		var gErr *GuardError
+		if errors.As(evalErr, &gErr) && gErr.Code != "" {
+			code = gErr.Code
+		}
+		store := GetEventStore()
+		if store != nil {
+			_ = store.Record(ctx, snapshot, &Decision{Kind: DecisionUnavailable, ErrorCode: code}, true)
+		}
+		return toTaskError(code, http.StatusServiceUnavailable)
+	}
+
+	if decision != nil && decision.Kind == DecisionBlock {
+		store := GetEventStore()
+		if store != nil {
+			_ = store.Record(ctx, snapshot, decision, true)
+		}
+		return toTaskError(ErrorCodeBlocked, http.StatusForbidden)
+	}
+
+	if decision != nil && !decision.AllowNextStage {
+		return toTaskError(ErrorCodeUnavailable, http.StatusServiceUnavailable)
+	}
+
+	if cfg.StorePassEvents {
+		store := GetEventStore()
+		if store == nil {
+			return toTaskError(ErrorCodeRecordFailed, http.StatusServiceUnavailable)
+		}
+		if err := store.Record(ctx, snapshot, decision, true); err != nil {
+			return toTaskError(ErrorCodeRecordFailed, http.StatusServiceUnavailable)
+		}
+	}
+
+	if c != nil {
+		c.Set(ContextKeyTaskAuditDone, true)
+	}
+	return nil
+}
+
+// CheckTaskPluginProtocolRequest 在 Responses Bridge 提交前执行同步审计门禁。
+func CheckTaskPluginProtocolRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo, auditMeta TaskAuditMeta) *taskdto.TaskError {
+	if c != nil && c.GetBool(ContextKeyTaskAuditDone) {
+		return nil
+	}
+
+	mgr := GetManager()
+	if mgr == nil {
+		return nil
+	}
+
+	if mgr.IsDegraded() {
+		return toTaskError(ErrorCodeConfigDegraded, http.StatusServiceUnavailable)
+	}
+
+	cfg := mgr.Active()
+	if !cfg.Enabled {
+		return nil
+	}
+
+	group := extractGroup(c, relayInfo)
+	if !cfg.MatchesGroup(group) {
+		return nil
+	}
+
+	var taskRequestBody any
+	if c != nil {
+		if reqVal, exists := c.Get("task_request"); exists {
+			taskRequestBody = reqVal
+		}
+	}
+
+	segments, err := ExtractTaskPluginResponsesRequest(c, taskRequestBody, auditMeta)
+	if errors.Is(err, ErrNoPrompt) {
+		return nil
+	}
+	if err != nil {
+		return toTaskError(ErrorCodeUnsupportedProtocol, http.StatusServiceUnavailable)
+	}
+
+	modelName := ""
+	if relayInfo != nil {
+		modelName = relayInfo.OriginModelName
+	}
+	if modelName == "" && c != nil {
+		modelName = c.GetString("resolved_task_model")
+	}
+
+	snapshot, err := BuildPromptSnapshot(c, relayInfo, "openai_responses", modelName, segments, cfg.LatestTurnOnly)
+	if err != nil {
+		if errors.Is(err, ErrNoPrompt) {
+			return nil
+		}
+		return toTaskError(ErrorCodeUnsupportedProtocol, http.StatusServiceUnavailable)
+	}
+
+	evaluator := GetEvaluator()
+	if evaluator == nil {
+		return toTaskError(ErrorCodeUnavailable, http.StatusServiceUnavailable)
+	}
+
+	ctx := getRequestContext(c)
+	decision, evalErr := evaluator.Evaluate(ctx, cfg, snapshot)
+	if evalErr != nil {
+		code := ErrorCodeUnavailable
+		var gErr *GuardError
+		if errors.As(evalErr, &gErr) && gErr.Code != "" {
+			code = gErr.Code
+		}
+		store := GetEventStore()
+		if store != nil {
+			_ = store.Record(ctx, snapshot, &Decision{Kind: DecisionUnavailable, ErrorCode: code}, true)
+		}
+		return toTaskError(code, http.StatusServiceUnavailable)
+	}
+
+	if decision != nil && decision.Kind == DecisionBlock {
+		store := GetEventStore()
+		if store != nil {
+			_ = store.Record(ctx, snapshot, decision, true)
+		}
+		return toTaskError(ErrorCodeBlocked, http.StatusForbidden)
+	}
+
+	if decision != nil && !decision.AllowNextStage {
+		return toTaskError(ErrorCodeUnavailable, http.StatusServiceUnavailable)
+	}
+
+	if cfg.StorePassEvents {
+		store := GetEventStore()
+		if store == nil {
+			return toTaskError(ErrorCodeRecordFailed, http.StatusServiceUnavailable)
+		}
+		if err := store.Record(ctx, snapshot, decision, true); err != nil {
+			return toTaskError(ErrorCodeRecordFailed, http.StatusServiceUnavailable)
+		}
+	}
+
+	if c != nil {
+		c.Set(ContextKeyTaskAuditDone, true)
+	}
+	return nil
+}

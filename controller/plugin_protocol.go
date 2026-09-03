@@ -23,6 +23,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/promptaudit"
 	"github.com/gin-gonic/gin"
 )
 
@@ -250,6 +251,18 @@ func serveTaskPluginProtocol(
 		relayInfo.OriginModelName = c.GetString("resolved_task_model")
 		if action := c.GetString("task_action"); action != "" {
 			relayInfo.Action = action
+		}
+		if pinned.Plugin != nil {
+			auditMeta := promptaudit.TaskAuditMeta{
+				PluginKey:           pluginKey,
+				AuditTextPaths:      pinned.Plugin.Meta.AuditTextPaths,
+				HasSubmitCapability: pinned.Plugin.Meta.HasSubmitCapability(),
+				Found:               true,
+			}
+			if taskErr = promptaudit.CheckTaskPluginProtocolRequest(c, relayInfo, auditMeta); taskErr != nil {
+				submissionStage = "prompt_audit"
+				return
+			}
 		}
 		submissionStage = "origin_task"
 		if taskErr = relay.ResolveOriginTask(c, relayInfo); taskErr != nil {
@@ -1246,6 +1259,20 @@ func respondPluginProtocolSubmissionError(c *gin.Context, taskErr *dto.TaskError
 	status := http.StatusInternalServerError
 	if taskErr != nil && taskErr.StatusCode >= 400 && taskErr.StatusCode <= 599 {
 		status = taskErr.StatusCode
+	}
+	if taskErr != nil {
+		switch taskErr.Code {
+		case promptaudit.ErrorCodeBlocked:
+			respondPluginProtocolError(c, status, taskErr.Code, "The prompt violates safety policies.")
+			return
+		case promptaudit.ErrorCodeUnavailable,
+			promptaudit.ErrorCodeInvalidResponse,
+			promptaudit.ErrorCodeConfigDegraded,
+			promptaudit.ErrorCodeRecordFailed,
+			promptaudit.ErrorCodeUnsupportedProtocol:
+			respondPluginProtocolError(c, status, taskErr.Code, "Prompt audit service is unavailable.")
+			return
+		}
 	}
 	switch status {
 	case http.StatusBadRequest:

@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/service/promptaudit"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -215,7 +216,7 @@ func UpdatePromptAuditConfig(c *gin.Context) {
 	})
 }
 
-// GetPromptAuditRuntime 获取当前提示词审计的运行时状态（降级标志、生效版本、端点运行时）。
+// GetPromptAuditRuntime 获取当前提示词审计的运行时状态（降级标志、生效版本、端点运行时、未覆盖提交插件列表）。
 func GetPromptAuditRuntime(c *gin.Context) {
 	manager := promptaudit.GetManager()
 	if manager == nil {
@@ -225,9 +226,20 @@ func GetPromptAuditRuntime(c *gin.Context) {
 		})
 		return
 	}
+	state := manager.RuntimeState()
+	uncovered := pluginruntime.UncoveredSubmitPlugins(pluginruntime.DefaultRegistry.Generation())
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    manager.RuntimeState(),
+		"data": dto.PromptAuditRuntimeResponse{
+			Mode:                  string(state.Mode),
+			ExpectedConfigVersion: state.ExpectedConfigVersion,
+			ActiveConfigVersion:   state.ActiveConfigVersion,
+			ConfigLoadedAt:        state.ConfigLoadedAt,
+			ConfigLoadError:       state.ConfigLoadError,
+			Degraded:              state.Degraded,
+			EnabledEndpoints:      state.EnabledEndpoints,
+			UncoveredPlugins:      uncovered,
+		},
 	})
 }
 

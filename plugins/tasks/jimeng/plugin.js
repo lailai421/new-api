@@ -37,6 +37,7 @@ export const meta = {
   ],
   protocols: [{ name: "openai_responses", supports: ["stream", "sync", "background"] }, "openai_video"],
   routes: [{ method: "POST", path: "/jimeng/", type: "dynamic", decode: "decodeRequest", render: "renderTask" }],
+  auditTextPaths: ["/prompt"],
 };
 
 function trimmed(value) {

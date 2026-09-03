@@ -966,3 +966,31 @@ func PreflightRoutingConflict(current *RoutingGeneration, candidate *LoadedPlugi
 	_, err := buildRoutingGenerationFromPlugins(effective, number)
 	return err
 }
+
+// UncoveredSubmitPlugins returns keys of plugins in the generation that have
+// submit capability but declare no valid auditTextPaths. The returned keys
+// are deduplicated and sorted lexicographically.
+func UncoveredSubmitPlugins(g *RoutingGeneration) []string {
+	if g == nil {
+		return []string{}
+	}
+	plugins := g.Plugins()
+	var uncovered []string
+	seen := make(map[string]struct{})
+	for _, p := range plugins {
+		if p == nil {
+			continue
+		}
+		if p.Meta.HasSubmitCapability() && len(p.Meta.AuditTextPaths) == 0 {
+			if _, exists := seen[p.Meta.Key]; !exists {
+				seen[p.Meta.Key] = struct{}{}
+				uncovered = append(uncovered, p.Meta.Key)
+			}
+		}
+	}
+	sort.Strings(uncovered)
+	if uncovered == nil {
+		return []string{}
+	}
+	return uncovered
+}
