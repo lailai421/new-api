@@ -1,0 +1,6 @@
+{"file":".trellis/tasks/09-03-prompt-audit-http-relay/prd.md","reason":"逐协议验证验收标准"}
+{"file":".trellis/tasks/09-03-prompt-audit-http-relay/design.md","reason":"检查提取和计费前接线"}
+{"file":".trellis/tasks/09-03-prompt-audit-core/design.md","reason":"核对统一判定语义"}
+{"file":".trellis/tasks/09-03-prompt-audit-storage-api/design.md","reason":"检查事件写入门禁"}
+{"file":".trellis/tasks/09-03-prompt-audit/research/codebase-analysis.md","reason":"防止遗漏 Relay 格式和 Midjourney 动作"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查请求、错误、计费和上游数据流"}

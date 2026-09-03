@@ -1,0 +1,6 @@
+{"file":".trellis/tasks/09-03-prompt-audit-storage-api/prd.md","reason":"存储与 API 范围、依赖和验收"}
+{"file":".trellis/tasks/09-03-prompt-audit-storage-api/design.md","reason":"数据边界、API 和三库约束"}
+{"file":".trellis/tasks/09-03-prompt-audit-core/design.md","reason":"必须实现的 ConfigStore/EventStore/Encryptor 接口"}
+{"file":".trellis/tasks/09-03-prompt-audit/design.md","reason":"父任务完整事件模型和 API 契约"}
+{"file":".trellis/tasks/09-03-prompt-audit/research/codebase-analysis.md","reason":"Option、权限、迁移和前端 API 调研"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"约束配置、持久化和接口数据流"}

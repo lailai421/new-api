@@ -1,0 +1,6 @@
+{"file":".trellis/tasks/09-03-prompt-audit-http-relay/prd.md","reason":"HTTP 与 Midjourney 范围和验收"}
+{"file":".trellis/tasks/09-03-prompt-audit-http-relay/design.md","reason":"协议提取与接线位置"}
+{"file":".trellis/tasks/09-03-prompt-audit-core/design.md","reason":"Snapshot、Evaluator 和 Decision 契约"}
+{"file":".trellis/tasks/09-03-prompt-audit-storage-api/design.md","reason":"必要事件持久化前置条件"}
+{"file":".trellis/tasks/09-03-prompt-audit/design.md","reason":"父任务协议矩阵和错误契约"}
+{"file":".trellis/tasks/09-03-prompt-audit/research/codebase-analysis.md","reason":"现有 Relay 链路与 DTO 调研"}

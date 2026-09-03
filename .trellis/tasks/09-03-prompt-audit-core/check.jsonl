@@ -1,0 +1,5 @@
+{"file":".trellis/tasks/09-03-prompt-audit-core/prd.md","reason":"验证核心能力验收项"}
+{"file":".trellis/tasks/09-03-prompt-audit-core/design.md","reason":"检查包边界和接口稳定性"}
+{"file":".trellis/tasks/09-03-prompt-audit/design.md","reason":"核对全局失败关闭、密钥和 Guard 规则"}
+{"file":".trellis/tasks/09-03-prompt-audit/research/codebase-analysis.md","reason":"核对参考实现差异"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查核心输出能支持所有下游入口"}

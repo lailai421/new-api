@@ -1,0 +1,7 @@
+{"file":".trellis/tasks/09-03-prompt-audit-integration-check/prd.md","reason":"最终完成条件"}
+{"file":".trellis/tasks/09-03-prompt-audit-integration-check/design.md","reason":"执行独立质量审查"}
+{"file":".trellis/tasks/09-03-prompt-audit/prd.md","reason":"逐项核对父任务验收"}
+{"file":".trellis/tasks/09-03-prompt-audit/design.md","reason":"检查架构与安全不变量"}
+{"file":".trellis/tasks/09-03-prompt-audit/implement.md","reason":"核对所有阶段已完成"}
+{"file":".trellis/tasks/09-03-prompt-audit/research/codebase-analysis.md","reason":"防止遗漏入口和数据库差异"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查全链路行为"}

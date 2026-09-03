@@ -1,0 +1,6 @@
+{"file":".trellis/tasks/09-03-prompt-audit-task-plugin/prd.md","reason":"验证内置和第三方插件覆盖"}
+{"file":".trellis/tasks/09-03-prompt-audit-task-plugin/design.md","reason":"检查路径契约和失败关闭"}
+{"file":".trellis/tasks/09-03-prompt-audit-core/design.md","reason":"核对统一判定"}
+{"file":".trellis/tasks/09-03-prompt-audit-storage-api/design.md","reason":"检查事件存储语义"}
+{"file":".trellis/tasks/09-03-prompt-audit/research/codebase-analysis.md","reason":"防止遗漏插件入口和规范化上下文"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"复用既有插件解析和 Schema 校验"}

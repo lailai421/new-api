@@ -1,0 +1,6 @@
+{"file":".trellis/tasks/09-03-prompt-audit-task-plugin/prd.md","reason":"插件覆盖范围和验收"}
+{"file":".trellis/tasks/09-03-prompt-audit-task-plugin/design.md","reason":"auditTextPaths 契约与接线边界"}
+{"file":".trellis/tasks/09-03-prompt-audit-core/design.md","reason":"统一 Snapshot 和 Decision"}
+{"file":".trellis/tasks/09-03-prompt-audit-storage-api/design.md","reason":"事件写入前置条件"}
+{"file":".trellis/tasks/09-03-prompt-audit/design.md","reason":"父任务 Task Plugin 协议要求"}
+{"file":".trellis/tasks/09-03-prompt-audit/research/codebase-analysis.md","reason":"插件规范化请求与现有 Schema 调研"}

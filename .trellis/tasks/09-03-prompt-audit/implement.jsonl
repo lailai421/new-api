@@ -1,0 +1,5 @@
+{"file":".trellis/tasks/09-03-prompt-audit/prd.md","reason":"已确认的产品范围、失败关闭规则、完整原文留存与验收标准"}
+{"file":".trellis/tasks/09-03-prompt-audit/design.md","reason":"跨层架构、数据模型、协议门禁、API、前端与测试设计"}
+{"file":".trellis/tasks/09-03-prompt-audit/research/codebase-analysis.md","reason":"sub2api 参考实现与 new-api 实际代码接入点调研"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"约束 Router、Controller、Service、Model 与前端的端到端数据流"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"优先复用现有配置、鉴权、请求体、组件和测试模式"}

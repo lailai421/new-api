@@ -1,0 +1,8 @@
+{"file":".trellis/tasks/09-03-prompt-audit-integration-check/prd.md","reason":"最终质量门禁与依赖"}
+{"file":".trellis/tasks/09-03-prompt-audit-integration-check/design.md","reason":"检查、数据库与泄漏审查方法"}
+{"file":".trellis/tasks/09-03-prompt-audit/prd.md","reason":"父任务全部验收标准"}
+{"file":".trellis/tasks/09-03-prompt-audit/design.md","reason":"全局架构、安全和测试设计"}
+{"file":".trellis/tasks/09-03-prompt-audit/implement.md","reason":"整体实施阶段与质量命令"}
+{"file":".trellis/tasks/09-03-prompt-audit/research/codebase-analysis.md","reason":"入口清单和技术基线"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"端到端验证数据流"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"检查重复实现和一致性"}

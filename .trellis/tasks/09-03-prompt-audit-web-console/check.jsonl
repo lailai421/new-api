@@ -1,0 +1,6 @@
+{"file":".trellis/tasks/09-03-prompt-audit-web-console/prd.md","reason":"验证前端功能与隐私边界"}
+{"file":".trellis/tasks/09-03-prompt-audit-web-console/design.md","reason":"检查组件复用和缓存策略"}
+{"file":".trellis/tasks/09-03-prompt-audit-storage-api/design.md","reason":"核对 API 契约"}
+{"file":".trellis/tasks/09-03-prompt-audit/design.md","reason":"检查 Root 权限、页面结构和七语种"}
+{"file":".trellis/tasks/09-03-prompt-audit/research/codebase-analysis.md","reason":"核对现有菜单和前端工程模式"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查 API 到页面的完整数据流"}
