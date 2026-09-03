@@ -25,6 +25,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/promptaudit"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
@@ -125,6 +126,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	relayInfo, err := relaycommon.GenRelayInfo(c, relayFormat, request, ws)
 	if err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
+		return
+	}
+
+	if auditErr := promptaudit.CheckRelayRequest(c, relayInfo, request); auditErr != nil {
+		newAPIError = auditErr
 		return
 	}
 
@@ -458,6 +464,20 @@ func RelayMidjourney(c *gin.Context) {
 			"description": fmt.Sprintf("failed to generate relay info: %s", err.Error()),
 			"type":        "upstream_error",
 			"code":        4,
+		})
+		return
+	}
+
+	if auditMjErr := promptaudit.CheckMidjourneyRequest(c, relayInfo); auditMjErr != nil {
+		statusCode := http.StatusServiceUnavailable
+		if auditMjErr.Code == http.StatusForbidden {
+			statusCode = http.StatusForbidden
+		}
+		c.JSON(statusCode, gin.H{
+			"code":        auditMjErr.Code,
+			"description": auditMjErr.Description,
+			"result":      auditMjErr.Result,
+			"type":        "prompt_audit_error",
 		})
 		return
 	}

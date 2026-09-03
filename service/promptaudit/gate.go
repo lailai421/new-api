@@ -1,0 +1,225 @@
+package promptaudit
+
+import (
+	"context"
+	"errors"
+	"net/http"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
+	taskdto "github.com/QuantumNous/new-api/dto"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/gin-gonic/gin"
+)
+
+// CheckRelayRequest 在业务上游调用、敏感词检查、token 估算和预扣费之前执行 HTTP Relay 请求的同步审计门禁。
+func CheckRelayRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo, request dto.Request) *types.NewAPIError {
+	if relayInfo != nil && relayInfo.RelayFormat == types.RelayFormatOpenAIRealtime {
+		return nil
+	}
+
+	mgr := GetManager()
+	if mgr == nil {
+		return nil
+	}
+
+	if mgr.IsDegraded() {
+		return toRelayError(ErrorCodeConfigDegraded, http.StatusServiceUnavailable)
+	}
+
+	cfg := mgr.Active()
+	if !cfg.Enabled {
+		return nil
+	}
+
+	group := extractGroup(c, relayInfo)
+	if !cfg.MatchesGroup(group) {
+		return nil
+	}
+
+	segments, protocol, modelName, err := ExtractRelayRequest(request, c)
+	if errors.Is(err, ErrNoPrompt) {
+		return nil
+	}
+	if err != nil {
+		return toRelayError(ErrorCodeUnsupportedProtocol, http.StatusServiceUnavailable)
+	}
+
+	snapshot, err := BuildPromptSnapshot(c, relayInfo, protocol, modelName, segments, cfg.LatestTurnOnly)
+	if err != nil {
+		if errors.Is(err, ErrNoPrompt) {
+			return nil
+		}
+		return toRelayError(ErrorCodeUnsupportedProtocol, http.StatusServiceUnavailable)
+	}
+
+	evaluator := GetEvaluator()
+	if evaluator == nil {
+		return toRelayError(ErrorCodeUnavailable, http.StatusServiceUnavailable)
+	}
+
+	ctx := getRequestContext(c)
+	decision, evalErr := evaluator.Evaluate(ctx, cfg, snapshot)
+	if evalErr != nil {
+		code := ErrorCodeUnavailable
+		var gErr *GuardError
+		if errors.As(evalErr, &gErr) && gErr.Code != "" {
+			code = gErr.Code
+		}
+		store := GetEventStore()
+		if store != nil {
+			_ = store.Record(ctx, snapshot, &Decision{Kind: DecisionUnavailable, ErrorCode: code}, true)
+		}
+		return toRelayError(code, http.StatusServiceUnavailable)
+	}
+
+	if decision != nil && decision.Kind == DecisionBlock {
+		store := GetEventStore()
+		if store != nil {
+			_ = store.Record(ctx, snapshot, decision, true)
+		}
+		return toRelayError(ErrorCodeBlocked, http.StatusForbidden)
+	}
+
+	if decision != nil && !decision.AllowNextStage {
+		return toRelayError(ErrorCodeUnavailable, http.StatusServiceUnavailable)
+	}
+
+	if cfg.StorePassEvents {
+		store := GetEventStore()
+		if store == nil {
+			return toRelayError(ErrorCodeRecordFailed, http.StatusServiceUnavailable)
+		}
+		if err := store.Record(ctx, snapshot, decision, true); err != nil {
+			return toRelayError(ErrorCodeRecordFailed, http.StatusServiceUnavailable)
+		}
+	}
+
+	return nil
+}
+
+// CheckMidjourneyRequest 在业务提交前执行 Midjourney 请求的同步审计门禁。
+func CheckMidjourneyRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo) *taskdto.MidjourneyResponse {
+	mgr := GetManager()
+	if mgr == nil {
+		return nil
+	}
+
+	if mgr.IsDegraded() {
+		return toMjError(ErrorCodeConfigDegraded, http.StatusServiceUnavailable)
+	}
+
+	cfg := mgr.Active()
+	if !cfg.Enabled {
+		return nil
+	}
+
+	group := extractGroup(c, relayInfo)
+	if !cfg.MatchesGroup(group) {
+		return nil
+	}
+
+	segments, modelName, err := ExtractMidjourneyRequest(c, relayInfo)
+	if errors.Is(err, ErrNoPrompt) {
+		return nil
+	}
+	if err != nil {
+		return toMjError(ErrorCodeUnsupportedProtocol, http.StatusServiceUnavailable)
+	}
+
+	snapshot, err := BuildPromptSnapshot(c, relayInfo, "midjourney", modelName, segments, cfg.LatestTurnOnly)
+	if err != nil {
+		if errors.Is(err, ErrNoPrompt) {
+			return nil
+		}
+		return toMjError(ErrorCodeUnsupportedProtocol, http.StatusServiceUnavailable)
+	}
+
+	evaluator := GetEvaluator()
+	if evaluator == nil {
+		return toMjError(ErrorCodeUnavailable, http.StatusServiceUnavailable)
+	}
+
+	ctx := getRequestContext(c)
+	decision, evalErr := evaluator.Evaluate(ctx, cfg, snapshot)
+	if evalErr != nil {
+		code := ErrorCodeUnavailable
+		var gErr *GuardError
+		if errors.As(evalErr, &gErr) && gErr.Code != "" {
+			code = gErr.Code
+		}
+		store := GetEventStore()
+		if store != nil {
+			_ = store.Record(ctx, snapshot, &Decision{Kind: DecisionUnavailable, ErrorCode: code}, true)
+		}
+		return toMjError(code, http.StatusServiceUnavailable)
+	}
+
+	if decision != nil && decision.Kind == DecisionBlock {
+		store := GetEventStore()
+		if store != nil {
+			_ = store.Record(ctx, snapshot, decision, true)
+		}
+		return toMjError(ErrorCodeBlocked, http.StatusForbidden)
+	}
+
+	if decision != nil && !decision.AllowNextStage {
+		return toMjError(ErrorCodeUnavailable, http.StatusServiceUnavailable)
+	}
+
+	if cfg.StorePassEvents {
+		store := GetEventStore()
+		if store == nil {
+			return toMjError(ErrorCodeRecordFailed, http.StatusServiceUnavailable)
+		}
+		if err := store.Record(ctx, snapshot, decision, true); err != nil {
+			return toMjError(ErrorCodeRecordFailed, http.StatusServiceUnavailable)
+		}
+	}
+
+	return nil
+}
+
+func getRequestContext(c *gin.Context) context.Context {
+	if c != nil && c.Request != nil && c.Request.Context() != nil {
+		return c.Request.Context()
+	}
+	return context.Background()
+}
+
+func extractGroup(c *gin.Context, relayInfo *relaycommon.RelayInfo) string {
+	group := ""
+	if relayInfo != nil {
+		if relayInfo.UsingGroup != "" {
+			group = relayInfo.UsingGroup
+		} else {
+			group = relayInfo.TokenGroup
+		}
+	}
+	if group == "" && c != nil {
+		group = common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+		if group == "" {
+			group = common.GetContextKeyString(c, constant.ContextKeyTokenGroup)
+		}
+	}
+	return group
+}
+
+func toRelayError(code string, statusCode int) *types.NewAPIError {
+	return types.NewErrorWithStatusCode(
+		errors.New(code),
+		types.ErrorCode(code),
+		statusCode,
+		types.ErrOptionWithSkipRetry(),
+	)
+}
+
+func toMjError(code string, statusCode int) *taskdto.MidjourneyResponse {
+	return &taskdto.MidjourneyResponse{
+		Code:        statusCode,
+		Description: code,
+		Result:      code,
+	}
+}

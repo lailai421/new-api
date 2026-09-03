@@ -1,0 +1,358 @@
+package promptaudit
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"regexp"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/gin-gonic/gin"
+)
+
+var (
+	// ErrNoPrompt 表示请求协议已知且结构合法，但确实不包含需要审计的文本内容。
+	ErrNoPrompt = errors.New("prompt audit: no prompt content found")
+
+	// ErrUnsupportedProtocol 表示未知协议格式或无法建立确定性提取契约，审计开启时必须失败关闭。
+	ErrUnsupportedProtocol = errors.New("prompt audit: unsupported protocol or payload format")
+
+	bearerPattern = regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+\-/]+=*`)
+	apiKeyPattern = regexp.MustCompile(`(?i)\b(sk|rk|pk|api[_-]?key|token|secret|password)[-_:=\s]+[A-Za-z0-9._~+\-/]{8,}`)
+	canaryPattern = regexp.MustCompile(`(?i)([A-Z]+_CANARY_)[A-Za-z0-9_-]+`)
+	emailPattern  = regexp.MustCompile(`(?i)\b[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}\b`)
+	phonePattern  = regexp.MustCompile(`(?:\+?\d[\d\s().-]{8,}\d)`)
+)
+
+const (
+	RoleSystem    = "system"
+	RoleDeveloper = "developer"
+	RoleUser      = "user"
+	RoleAssistant = "assistant"
+	RoleTool      = "tool"
+
+	MaxRedactedPreviewRunes = 96
+)
+
+// PromptSegment 描述从客户端输入中提取的一段结构化文本及其所属角色。
+type PromptSegment struct {
+	Role    string
+	Content string
+	User    bool
+}
+
+// IsUser 检查该分段是否属于用户角色输入。
+func (s PromptSegment) IsUser() bool {
+	if s.User {
+		return true
+	}
+	role := strings.ToLower(strings.TrimSpace(s.Role))
+	return role == RoleUser
+}
+
+// IsAssistant 检查该分段是否属于模型/助手输出历史。
+func (s PromptSegment) IsAssistant() bool {
+	role := strings.ToLower(strings.TrimSpace(s.Role))
+	return role == RoleAssistant || role == "model"
+}
+
+// NormalizeSegments 清除空白段落并去除内容首尾空白字符。
+func NormalizeSegments(segments []PromptSegment) []PromptSegment {
+	result := make([]PromptSegment, 0, len(segments))
+	for _, seg := range segments {
+		trimmed := strings.TrimSpace(seg.Content)
+		if trimmed != "" {
+			seg.Content = trimmed
+			result = append(result, seg)
+		}
+	}
+	return result
+}
+
+// JoinSegments 将所有段落按稳定顺序拼接为完整原文，不进行截断。
+func JoinSegments(segments []PromptSegment) string {
+	normalized := NormalizeSegments(segments)
+	if len(normalized) == 0 {
+		return ""
+	}
+	texts := make([]string, len(normalized))
+	for i, seg := range normalized {
+		texts[i] = seg.Content
+	}
+	return strings.Join(texts, "\n\n")
+}
+
+// SelectLatestTurnSegments 提取最新用户轮次及其紧邻的上一轮 assistant 输出。
+// 若未找到用户输入，退回全部分段；若配置 latest_turn_only 为 true，此函数用于构造 ScanText。
+func SelectLatestTurnSegments(segments []PromptSegment) []string {
+	normalized := NormalizeSegments(segments)
+	if len(normalized) == 0 {
+		return nil
+	}
+
+	latestUserStart := -1
+	for i := len(normalized) - 1; i >= 0; i-- {
+		if normalized[i].IsUser() {
+			latestUserStart = i
+			break
+		}
+	}
+
+	if latestUserStart < 0 {
+		return AllSegmentTextsPrioritized(normalized)
+	}
+
+	for latestUserStart > 0 && normalized[latestUserStart-1].IsUser() {
+		latestUserStart--
+	}
+	latestUserEnd := latestUserStart
+	for latestUserEnd < len(normalized) && normalized[latestUserEnd].IsUser() {
+		latestUserEnd++
+	}
+
+	currentUserTexts := make([]string, 0, latestUserEnd-latestUserStart)
+	for _, s := range normalized[latestUserStart:latestUserEnd] {
+		currentUserTexts = append(currentUserTexts, s.Content)
+	}
+	currentUserCombined := strings.Join(currentUserTexts, "\n\n")
+
+	var previousAssistantTexts []string
+	for i := latestUserStart - 1; i >= 0; i-- {
+		if !normalized[i].IsAssistant() {
+			continue
+		}
+		start := i
+		for start > 0 && normalized[start-1].IsAssistant() {
+			start--
+		}
+		for _, s := range normalized[start : i+1] {
+			previousAssistantTexts = append(previousAssistantTexts, s.Content)
+		}
+		break
+	}
+
+	if len(previousAssistantTexts) > 0 {
+		return []string{currentUserCombined, strings.Join(previousAssistantTexts, "\n\n")}
+	}
+	return []string{currentUserCombined}
+}
+
+// AllSegmentTextsPrioritized 将最新用户段落置于首位，其余段落按原顺序排布，用于默认全局审计。
+func AllSegmentTextsPrioritized(normalized []PromptSegment) []string {
+	if len(normalized) == 0 {
+		return nil
+	}
+
+	priorityIndex := -1
+	for i := len(normalized) - 1; i >= 0; i-- {
+		if normalized[i].IsUser() {
+			priorityIndex = i
+			break
+		}
+	}
+
+	if priorityIndex < 0 {
+		result := make([]string, len(normalized))
+		for i, s := range normalized {
+			result[i] = s.Content
+		}
+		return result
+	}
+
+	result := make([]string, 0, len(normalized))
+	result = append(result, normalized[priorityIndex].Content)
+	for i, s := range normalized {
+		if i != priorityIndex {
+			result = append(result, s.Content)
+		}
+	}
+	return result
+}
+
+// BuildScanText 使用 PrioritySeparator 组合分段，使 Evaluator 能识别首要扫描优先级。
+func BuildScanText(segmentTexts []string) string {
+	if len(segmentTexts) == 0 {
+		return ""
+	}
+	if len(segmentTexts) == 1 {
+		return segmentTexts[0]
+	}
+	return segmentTexts[0] + PrioritySeparator + strings.Join(segmentTexts[1:], "\n\n")
+}
+
+// CalculatePromptHash 计算完整原文的 SHA-256 哈希。
+func CalculatePromptHash(fullPrompt string) string {
+	sum := sha256.Sum256([]byte(fullPrompt))
+	return hex.EncodeToString(sum[:])
+}
+
+// BuildPromptPreview 生成 96-rune 脱敏预览文本。
+// 先脱敏 Bearer token、API key、密码、邮箱、手机号等模式，再按 Unicode rune 截取最多 96 字符。
+func BuildPromptPreview(value string) string {
+	value = bearerPattern.ReplaceAllString(value, "Bearer ***")
+	value = apiKeyPattern.ReplaceAllStringFunc(value, func(match string) string {
+		if idx := strings.IndexAny(match, ":= \t"); idx >= 0 {
+			return match[:idx+1] + "***"
+		}
+		return "***"
+	})
+	value = canaryPattern.ReplaceAllString(value, "${1}***")
+	value = emailPattern.ReplaceAllString(value, "***@***")
+	value = phonePattern.ReplaceAllString(value, "***PHONE***")
+
+	trimmed := strings.TrimSpace(value)
+	runes := []rune(trimmed)
+	if len(runes) == 0 {
+		return ""
+	}
+	if len(runes) > MaxRedactedPreviewRunes {
+		return string(runes[:MaxRedactedPreviewRunes])
+	}
+	return string(runes)
+}
+
+// BuildPromptSnapshot 结合上下文环境与提取结果组装 PromptSnapshot。
+func BuildPromptSnapshot(
+	c *gin.Context,
+	relayInfo *relaycommon.RelayInfo,
+	protocol string,
+	modelName string,
+	segments []PromptSegment,
+	latestTurnOnly bool,
+) (PromptSnapshot, error) {
+	normalized := NormalizeSegments(segments)
+	if len(normalized) == 0 {
+		return PromptSnapshot{}, ErrNoPrompt
+	}
+
+	fullPrompt := JoinSegments(normalized)
+	if fullPrompt == "" {
+		return PromptSnapshot{}, ErrNoPrompt
+	}
+
+	var scanText string
+	auditScope := "full"
+	if latestTurnOnly {
+		auditScope = "latest_turn"
+		scanSegments := SelectLatestTurnSegments(normalized)
+		scanText = BuildScanText(scanSegments)
+	} else {
+		scanSegments := AllSegmentTextsPrioritized(normalized)
+		scanText = BuildScanText(scanSegments)
+	}
+
+	reqID := ""
+	if relayInfo != nil && relayInfo.RequestId != "" {
+		reqID = relayInfo.RequestId
+	} else if c != nil {
+		reqID = c.GetString(common.RequestIdKey)
+	}
+	if reqID == "" {
+		reqID = common.NewRequestId()
+	}
+
+	userID := 0
+	if relayInfo != nil && relayInfo.UserId != 0 {
+		userID = relayInfo.UserId
+	} else if c != nil {
+		userID = common.GetContextKeyInt(c, constant.ContextKeyUserId)
+	}
+
+	username := ""
+	if c != nil {
+		username = c.GetString("username")
+		if username == "" {
+			username = common.GetContextKeyString(c, constant.ContextKeyUserName)
+		}
+	}
+
+	userEmail := ""
+	if relayInfo != nil && relayInfo.UserEmail != "" {
+		userEmail = relayInfo.UserEmail
+	} else if c != nil {
+		userEmail = c.GetString("user_email")
+		if userEmail == "" {
+			userEmail = common.GetContextKeyString(c, constant.ContextKeyUserEmail)
+		}
+	}
+
+	tokenID := 0
+	if relayInfo != nil && relayInfo.TokenId != 0 {
+		tokenID = relayInfo.TokenId
+	} else if c != nil {
+		tokenID = common.GetContextKeyInt(c, constant.ContextKeyTokenId)
+	}
+
+	tokenName := ""
+	if c != nil {
+		tokenName = c.GetString("token_name")
+	}
+
+	group := ""
+	if relayInfo != nil {
+		if relayInfo.UsingGroup != "" {
+			group = relayInfo.UsingGroup
+		} else {
+			group = relayInfo.TokenGroup
+		}
+	}
+	if group == "" && c != nil {
+		group = common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+		if group == "" {
+			group = common.GetContextKeyString(c, constant.ContextKeyTokenGroup)
+		}
+	}
+
+	requestPath := ""
+	if relayInfo != nil && relayInfo.RequestURLPath != "" {
+		requestPath = relayInfo.RequestURLPath
+	} else if c != nil && c.Request != nil && c.Request.URL != nil {
+		requestPath = c.Request.URL.Path
+	}
+
+	if modelName == "" && relayInfo != nil {
+		modelName = relayInfo.OriginModelName
+	}
+
+	channelID := 0
+	channelType := 0
+	if relayInfo != nil && relayInfo.ChannelMeta != nil {
+		channelID = relayInfo.ChannelId
+		channelType = relayInfo.ChannelType
+	}
+	if channelID == 0 && c != nil {
+		channelID = c.GetInt("channel_id")
+	}
+	if channelType == 0 && c != nil {
+		channelType = c.GetInt("channel_type")
+	}
+
+	snapshot := PromptSnapshot{
+		RequestID:         reqID,
+		UserID:            userID,
+		UsernameSnapshot:  username,
+		UserEmailSnapshot: userEmail,
+		TokenID:           tokenID,
+		TokenNameSnapshot: tokenName,
+		Group:             group,
+		RequestPath:       requestPath,
+		Protocol:          protocol,
+		Model:             modelName,
+		Stage:             "http",
+		FullPrompt:        fullPrompt,
+		ScanText:          scanText,
+		PromptHash:        CalculatePromptHash(fullPrompt),
+		RedactedPreview:   BuildPromptPreview(fullPrompt),
+		PromptLength:      utf8.RuneCountInString(fullPrompt),
+		MessageCount:      len(normalized),
+		AuditScope:        auditScope,
+		ChannelID:         channelID,
+		ChannelType:       channelType,
+	}
+
+	return snapshot, nil
+}

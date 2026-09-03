@@ -124,3 +124,35 @@ func SetGlobalEncryptor(e Encryptor) {
 	defer globalMu.Unlock()
 	globalEncryptor = e
 }
+
+// SetGlobalEvaluator 设置全局 Evaluator（供测试夹具使用）。
+func SetGlobalEvaluator(e Evaluator) {
+	globalMu.Lock()
+	defer globalMu.Unlock()
+	globalEvaluator = e
+}
+
+// SetGlobalForTestHelper 供测试注入自定义 active 配置和 mock 对象。
+func SetGlobalForTestHelper(active ActiveConfig, degraded bool, eval Evaluator, store EventStore) func() {
+	globalMu.Lock()
+	oldMgr := globalManager
+	oldEval := globalEvaluator
+	oldStore := globalEventStore
+
+	mgr := NewManager(nil, nil)
+	mgr.active = active
+	mgr.degraded = degraded
+
+	globalManager = mgr
+	globalEvaluator = eval
+	globalEventStore = store
+	globalMu.Unlock()
+
+	return func() {
+		globalMu.Lock()
+		globalManager = oldMgr
+		globalEvaluator = oldEval
+		globalEventStore = oldStore
+		globalMu.Unlock()
+	}
+}

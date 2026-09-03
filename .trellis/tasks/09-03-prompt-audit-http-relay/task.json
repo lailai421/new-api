@@ -3,7 +3,7 @@
   "name": "prompt-audit-http-relay",
   "title": "提示词审计 HTTP Relay 接入",
   "description": "接入标准 HTTP Relay 与 Midjourney 的协议提取和同步门禁。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -20,7 +20,18 @@
   "subtasks": [],
   "children": [],
   "parent": "09-03-prompt-audit",
-  "relatedFiles": [],
+  "relatedFiles": [
+    "service/promptaudit/snapshot.go",
+    "service/promptaudit/extract_relay.go",
+    "service/promptaudit/extract_midjourney.go",
+    "service/promptaudit/gate.go",
+    "service/promptaudit/init.go",
+    "service/promptaudit/extract_relay_test.go",
+    "service/promptaudit/extract_midjourney_test.go",
+    "service/promptaudit/gate_test.go",
+    "controller/relay.go",
+    "controller/relay_prompt_audit_test.go"
+  ],
   "notes": "",
   "meta": {}
 }
