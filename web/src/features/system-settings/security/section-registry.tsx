@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { PromptAuditPage } from '@/features/prompt-audit'
+
 import { RateLimitSection } from '../request-limits/rate-limit-section'
 import { SensitiveWordsSection } from '../request-limits/sensitive-words-section'
 import { SSRFSection } from '../request-limits/ssrf-section'
@@ -24,6 +26,11 @@ import type { SecuritySettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 
 const SECURITY_SECTIONS = [
+  {
+    id: 'prompt-audit',
+    titleKey: 'Prompt Audit',
+    build: () => <PromptAuditPage />,
+  },
   {
     id: 'rate-limit',
     titleKey: 'Rate Limiting',
