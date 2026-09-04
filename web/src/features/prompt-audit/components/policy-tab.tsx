@@ -248,7 +248,7 @@ export function PolicyTab({
                       </FormLabel>
                       <FormDescription>
                         {t(
-                          'By default, all user prompts in the request are scanned and stored, excluding client instructions, AGENTS.md envelopes, system prompts, and tool results. Enabling this scans only the latest user turn, while all user prompts in the request are still stored for review.'
+                          'By default, all authentic user prompts in the request are scanned and stored, excluding client instructions, AGENTS.md envelopes, environment context and other automated Codex fragments, system prompts, and tool results. Identical prompts within a short window are evaluated once remotely. Enabling this scans only the latest authentic user turn, while all authentic user prompts in the request are still stored for review.'
                         )}
                       </FormDescription>
                     </div>

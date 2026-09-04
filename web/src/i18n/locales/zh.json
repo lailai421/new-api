@@ -746,6 +746,7 @@
     "Built-in: phone fingerprint/face, or Windows Hello; External: USB security key": "内置：手机指纹/面部，或 Windows Hello；外部：USB 安全密钥",
     "by": "由",
     "By category": "按行业",
+    "By default, all authentic user prompts in the request are scanned and stored, excluding client instructions, AGENTS.md envelopes, environment context and other automated Codex fragments, system prompts, and tool results. Identical prompts within a short window are evaluated once remotely. Enabling this scans only the latest authentic user turn, while all authentic user prompts in the request are still stored for review.": "默认扫描并保存该请求全部用户真实提示词，排除客户端人设、AGENTS.md 信封、环境上下文等 Codex 自动片段、系统提示与工具结果；同一提示词短时间内只远程送审一次。开启后仅扫描最新一轮真实用户输入，详情中仍会保存该请求全部用户真实提示词以供复核。",
     "By default, all user prompts in the request are scanned and stored, excluding client instructions, AGENTS.md envelopes, system prompts, and tool results. Enabling this scans only the latest user turn, while all user prompts in the request are still stored for review.": "默认扫描并保存该请求全部用户真实提示词，排除客户端人设、AGENTS.md 信封、系统提示与工具结果。开启后仅扫描最新一轮用户输入，详情中仍会保存该请求全部用户真实提示词以供复核。",
     "By default, all user prompts in the request are scanned and stored, excluding client instructions, system prompts, and tool results. Enabling this scans only the latest user turn, while all user prompts in the request are still stored for review.": "默认扫描并保存该请求全部用户提示词，排除客户端人设、系统提示与工具结果。开启后仅扫描最新一轮用户输入，详情中仍会保存该请求全部用户提示词以供复核。",
     "By model author": "按模型厂商",

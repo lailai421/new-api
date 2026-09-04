@@ -187,6 +187,13 @@ func CheckRealtimeEvent(ctx context.Context, c *gin.Context, relayInfo *relaycom
 	}
 
 	if cfg.StorePassEvents {
+		if decision != nil && decision.FromCache {
+			return RealtimeAuditResult{
+				Allowed:   true,
+				EventType: eventType,
+				Decision:  decision,
+			}
+		}
 		store := GetEventStore()
 		if store == nil {
 			return RealtimeAuditResult{

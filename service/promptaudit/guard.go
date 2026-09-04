@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"golang.org/x/sync/singleflight"
 )
 
 // SplitRunes 按照 Unicode rune 边界对文本进行切片，优先保留并切分前置优先段。
@@ -464,6 +465,7 @@ type GuardEvaluator struct {
 	nodeMu       sync.Mutex
 	nodes        map[string]chan struct{}
 	cache        *DecisionCache
+	sfGroup      singleflight.Group
 }
 
 func NewGuardEvaluator(scanner PromptScanner) *GuardEvaluator {
@@ -614,6 +616,7 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 	cacheKey := computeDecisionCacheKey(cfg.ConfigVersion, cfg.Scanners, remoteScan)
 	if g.cache != nil {
 		if cached, hit := g.cache.Get(cacheKey); hit {
+			cached.FromCache = true
 			latencyMS := int(time.Since(start).Milliseconds())
 			cached.LatencyMS = latencyMS
 			if cached.Result != nil {
@@ -665,87 +668,154 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 		}
 	}
 
-	// 全局并发信号量控制
-	select {
-	case g.globalSem <- struct{}{}:
-		defer func() { <-g.globalSem }()
-	default:
+	type sfGuardResult struct {
+		decision    *Decision
+		leaderToken any
+	}
+
+	myToken := new(byte)
+	val, err, _ := g.sfGroup.Do(cacheKey, func() (any, error) {
+		// 1. 双检缓存（以防等待期间前序 leader 已完成远程调用并写入缓存）
+		if g.cache != nil {
+			if cached, hit := g.cache.Get(cacheKey); hit {
+				cached.FromCache = true
+				return &sfGuardResult{
+					decision:    cached,
+					leaderToken: myToken,
+				}, nil
+			}
+		}
+
+		// 2. 全局并发信号量控制
+		select {
+		case g.globalSem <- struct{}{}:
+			defer func() { <-g.globalSem }()
+		default:
+			return nil, &GuardError{
+				Code:       ErrorCodeUnavailable,
+				HTTPStatus: 503,
+				Cause:      errors.New("global guard bulkhead capacity full"),
+			}
+		}
+
+		// 3. 整体有界超时
+		timeoutMS := endpoints[0].TimeoutMS
+		if timeoutMS <= 0 {
+			timeoutMS = DefaultTimeoutMS
+		}
+		evalCtx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMS)*time.Millisecond)
+		defer cancel()
+
+		inputLimit := minimumInputLimit(endpoints)
+		chunks := SplitRunes(remoteScan, inputLimit)
+		if len(chunks) == 0 {
+			return &sfGuardResult{
+				decision: &Decision{
+					Kind:           DecisionAllow,
+					HTTPStatus:     200,
+					AllowNextStage: true,
+				},
+				leaderToken: myToken,
+			}, nil
+		}
+
+		results := make([]*NormalizedResult, 0, len(chunks))
+		for _, chunk := range chunks {
+			res, err := g.scanChunk(evalCtx, cfg, endpoints, chunk)
+			if err != nil {
+				var gErr *GuardError
+				code := ErrorCodeUnavailable
+				if errors.As(err, &gErr) && gErr.Code != "" {
+					code = gErr.Code
+				}
+				if gErr != nil {
+					return nil, gErr
+				}
+				return nil, &GuardError{
+					Code:       code,
+					HTTPStatus: 503,
+					Cause:      err,
+				}
+			}
+			res.ChunkTotal = len(chunks)
+			results = append(results, res)
+
+			// 任何一块命中 Block，立即短路终止，不再发起后续请求
+			if res.Action == ActionBlock {
+				break
+			}
+		}
+
+		aggregated, err := AggregateResults(results, time.Since(start))
+		if err != nil {
+			return nil, &GuardError{
+				Code:       ErrorCodeInvalidResponse,
+				HTTPStatus: 503,
+				Cause:      err,
+			}
+		}
+		aggregated.ChunkTotal = len(chunks)
+
+		kind := DecisionAllow
+		httpStatus := 200
+		if aggregated.Action == ActionWarn {
+			kind = DecisionFlag
+			httpStatus = 200
+		}
+		if aggregated.Action == ActionBlock {
+			kind = DecisionBlock
+			httpStatus = 403
+		}
+
+		decision := &Decision{
+			Kind:           kind,
+			HTTPStatus:     httpStatus,
+			Result:         aggregated,
+			AllowNextStage: (kind == DecisionAllow || kind == DecisionFlag),
+			LatencyMS:      aggregated.LatencyMS,
+			FromCache:      false,
+		}
+		if kind == DecisionBlock {
+			decision.ErrorCode = ErrorCodeBlocked
+		}
+
+		// 写入判定短缓存（仅缓存 Allow / Flag / Block，不缓存失败）
+		if g.cache != nil {
+			g.cache.Put(cacheKey, decision)
+		}
+
+		return &sfGuardResult{
+			decision:    decision,
+			leaderToken: myToken,
+		}, nil
+	})
+
+	if err != nil {
+		var gErr *GuardError
+		code := ErrorCodeUnavailable
+		if errors.As(err, &gErr) && gErr.Code != "" {
+			code = gErr.Code
+		}
+		latencyMS := int(time.Since(start).Milliseconds())
 		failFields := copyLogFields(baseFields)
 		failFields["status"] = "failed"
-		failFields["error_code"] = ErrorCodeUnavailable
-		latencyMS := int(time.Since(start).Milliseconds())
+		failFields["error_code"] = code
 		failFields["latency_ms"] = latencyMS
 		LogGuardWarn(ctx, EventGuardFailed, failFields)
+		if gErr != nil {
+			gErr.LatencyMS = latencyMS
+			return nil, gErr
+		}
 		return nil, &GuardError{
-			Code:       ErrorCodeUnavailable,
+			Code:       code,
 			HTTPStatus: 503,
-			Cause:      errors.New("global guard bulkhead capacity full"),
+			Cause:      err,
 			LatencyMS:  latencyMS,
 		}
 	}
 
-	// 整体有界超时
-	timeoutMS := endpoints[0].TimeoutMS
-	if timeoutMS <= 0 {
-		timeoutMS = DefaultTimeoutMS
-	}
-	evalCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMS)*time.Millisecond)
-	defer cancel()
-
-	inputLimit := minimumInputLimit(endpoints)
-	chunks := SplitRunes(remoteScan, inputLimit)
-	if len(chunks) == 0 {
-		latencyMS := int(time.Since(start).Milliseconds())
-		allowFields := copyLogFields(baseFields)
-		allowFields["status"] = "allowed"
-		allowFields["decision"] = DecisionAllow
-		allowFields["latency_ms"] = latencyMS
-		LogGuardInfo(ctx, EventGuardAllowed, allowFields)
-		return &Decision{
-			Kind:           DecisionAllow,
-			HTTPStatus:     200,
-			AllowNextStage: true,
-			LatencyMS:      latencyMS,
-		}, nil
-	}
-
-	results := make([]*NormalizedResult, 0, len(chunks))
-	for _, chunk := range chunks {
-		res, err := g.scanChunk(evalCtx, cfg, endpoints, chunk)
-		if err != nil {
-			var gErr *GuardError
-			code := ErrorCodeUnavailable
-			if errors.As(err, &gErr) && gErr.Code != "" {
-				code = gErr.Code
-			}
-			latencyMS := int(time.Since(start).Milliseconds())
-			failFields := copyLogFields(baseFields)
-			failFields["status"] = "failed"
-			failFields["error_code"] = code
-			failFields["latency_ms"] = latencyMS
-			LogGuardWarn(ctx, EventGuardFailed, failFields)
-			if gErr != nil {
-				gErr.LatencyMS = latencyMS
-				return nil, gErr
-			}
-			return nil, &GuardError{
-				Code:       code,
-				HTTPStatus: 503,
-				Cause:      err,
-				LatencyMS:  latencyMS,
-			}
-		}
-		res.ChunkTotal = len(chunks)
-		results = append(results, res)
-
-		// 任何一块命中 Block，立即短路终止，不再发起后续请求
-		if res.Action == ActionBlock {
-			break
-		}
-	}
-
-	aggregated, err := AggregateResults(results, time.Since(start))
-	if err != nil {
+	resResult, ok := val.(*sfGuardResult)
+	if !ok || resResult == nil || resResult.decision == nil {
 		latencyMS := int(time.Since(start).Milliseconds())
 		failFields := copyLogFields(baseFields)
 		failFields["status"] = "failed"
@@ -755,57 +825,48 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 		return nil, &GuardError{
 			Code:       ErrorCodeInvalidResponse,
 			HTTPStatus: 503,
-			Cause:      err,
+			Cause:      errors.New("singleflight returned invalid decision"),
 			LatencyMS:  latencyMS,
 		}
 	}
-	aggregated.ChunkTotal = len(chunks)
 
-	kind := DecisionAllow
-	httpStatus := 200
-	if aggregated.Action == ActionWarn {
-		kind = DecisionFlag
-		httpStatus = 200
-	}
-	if aggregated.Action == ActionBlock {
-		kind = DecisionBlock
-		httpStatus = 403
+	isLeader := (resResult.leaderToken == myToken) && !resResult.decision.FromCache
+	decision := cloneDecision(resResult.decision)
+	if !isLeader {
+		decision.FromCache = true
 	}
 
-	decision := &Decision{
-		Kind:           kind,
-		HTTPStatus:     httpStatus,
-		Result:         aggregated,
-		AllowNextStage: (kind == DecisionAllow || kind == DecisionFlag),
-		LatencyMS:      aggregated.LatencyMS,
+	latencyMS := int(time.Since(start).Milliseconds())
+	decision.LatencyMS = latencyMS
+	if decision.Result != nil {
+		decision.Result.LatencyMS = latencyMS
 	}
-	if kind == DecisionBlock {
-		decision.ErrorCode = ErrorCodeBlocked
+
+	if decision.Kind == DecisionBlock {
 		blockFields := copyLogFields(baseFields)
 		blockFields["status"] = "blocked"
-		blockFields["decision"] = kind
-		blockFields["risk_level"] = aggregated.RiskLevel
-		blockFields["action"] = aggregated.Action
-		blockFields["guard_endpoint_id"] = aggregated.GuardEndpointID
-		blockFields["chunk_total"] = aggregated.ChunkTotal
-		blockFields["latency_ms"] = aggregated.LatencyMS
+		blockFields["decision"] = decision.Kind
+		if decision.Result != nil {
+			blockFields["risk_level"] = decision.Result.RiskLevel
+			blockFields["action"] = decision.Result.Action
+			blockFields["guard_endpoint_id"] = decision.Result.GuardEndpointID
+			blockFields["chunk_total"] = decision.Result.ChunkTotal
+		}
+		blockFields["latency_ms"] = latencyMS
 		blockFields["error_code"] = ErrorCodeBlocked
 		LogGuardWarn(ctx, EventGuardBlocked, blockFields)
 	} else {
 		allowFields := copyLogFields(baseFields)
 		allowFields["status"] = "allowed"
-		allowFields["decision"] = kind
-		allowFields["risk_level"] = aggregated.RiskLevel
-		allowFields["action"] = aggregated.Action
-		allowFields["guard_endpoint_id"] = aggregated.GuardEndpointID
-		allowFields["chunk_total"] = aggregated.ChunkTotal
-		allowFields["latency_ms"] = aggregated.LatencyMS
+		allowFields["decision"] = decision.Kind
+		if decision.Result != nil {
+			allowFields["risk_level"] = decision.Result.RiskLevel
+			allowFields["action"] = decision.Result.Action
+			allowFields["guard_endpoint_id"] = decision.Result.GuardEndpointID
+			allowFields["chunk_total"] = decision.Result.ChunkTotal
+		}
+		allowFields["latency_ms"] = latencyMS
 		LogGuardInfo(ctx, EventGuardAllowed, allowFields)
-	}
-
-	// 5. 写入判定短缓存（仅缓存 Allow / Flag / Block，不缓存失败）
-	if g.cache != nil {
-		g.cache.Put(cacheKey, decision)
 	}
 
 	return decision, nil

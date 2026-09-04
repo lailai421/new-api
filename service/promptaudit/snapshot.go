@@ -175,6 +175,123 @@ func StripAgentsMdEnvelopes(segments []PromptSegment) []PromptSegment {
 	return result
 }
 
+const (
+	CodexTitlePrefix = "Generate a concise, single-line task title of at most "
+)
+
+type pairedTag struct {
+	open  string
+	close string
+}
+
+var codexContextualTags = []pairedTag{
+	{open: "<environment_context>", close: "</environment_context>"},
+	{open: "<skills_instructions>", close: "</skills_instructions>"},
+	{open: "<plugins_instructions>", close: "</plugins_instructions>"},
+	{open: "<user_shell_command>", close: "</user_shell_command>"},
+	{open: "<turn_aborted>", close: "</turn_aborted>"},
+}
+
+// stripPairedTagsFromText 剥离 Codex 注入的自动上下文成对标记块（ASCII 大小写不敏感）。
+// 若整段在 trim 后以开标签起头并以对应闭标签结尾，则整段丢弃（返回空字符串）；
+// 否则从文本中剔除所有完整的 open...close 闭区间（含标签自身），再 trim。
+func stripPairedTagsFromText(text string) string {
+	trimmed := strings.TrimSpace(text)
+	lowerTrimmed := strings.ToLower(trimmed)
+
+	// 先检查整段是否恰好为一个成对标记块
+	for _, tag := range codexContextualTags {
+		if strings.HasPrefix(lowerTrimmed, tag.open) && strings.HasSuffix(lowerTrimmed, tag.close) {
+			return ""
+		}
+	}
+
+	// 循环删除文本中所有成对标签闭区间
+	for _, tag := range codexContextualTags {
+		openLen := len(tag.open)
+		closeLen := len(tag.close)
+		for {
+			lower := strings.ToLower(text)
+			openIdx := strings.Index(lower, tag.open)
+			if openIdx == -1 {
+				break
+			}
+			closeIdx := strings.Index(lower[openIdx+openLen:], tag.close)
+			if closeIdx == -1 {
+				// 没有匹配的闭标签，不符合完整成对闭区间，退出
+				break
+			}
+			endIdx := openIdx + openLen + closeIdx + closeLen
+			text = text[:openIdx] + text[endIdx:]
+		}
+	}
+
+	return strings.TrimSpace(text)
+}
+
+// StripCodexContextualUser 剥离 Codex 注入的成对标记块（环境上下文、技能、插件、用户 shell 命令、中止标记等）。
+// 非 user 分段原样保留；整段为标记块的丢弃；混合段切除标记块保留真实正文。
+func StripCodexContextualUser(segments []PromptSegment) []PromptSegment {
+	result := make([]PromptSegment, 0, len(segments))
+	for _, seg := range segments {
+		if !seg.IsUser() {
+			result = append(result, seg)
+			continue
+		}
+
+		stripped := stripPairedTagsFromText(seg.Content)
+		if stripped == "" {
+			continue
+		}
+
+		seg.Content = stripped
+		result = append(result, seg)
+	}
+	return result
+}
+
+var codexTitleUserPromptPattern = regexp.MustCompile(`(?m)^User prompt:[ \t]*\r?\n?`)
+
+// unwrapCodexTitleFromText 从 Codex 标题生成模板中提取真实用户提示词正文。
+// 契约：trim 后以 "Generate a concise, single-line task title of at most " 起头，且含独立行 "User prompt:"。
+// 仅保留 "User prompt:" 之后的真实正文；若正文为空则整段丢弃（返回空字符串）。
+// 用户讨论起标题但没有完整模板契约时，保持原样。
+func unwrapCodexTitleFromText(text string) string {
+	trimmed := strings.TrimSpace(text)
+	if !strings.HasPrefix(trimmed, CodexTitlePrefix) {
+		return text
+	}
+
+	loc := codexTitleUserPromptPattern.FindStringIndex(trimmed)
+	if loc == nil {
+		return text
+	}
+
+	userPrompt := strings.TrimSpace(trimmed[loc[1]:])
+	return userPrompt
+}
+
+// UnwrapCodexThreadTitle 展开并抽取所有 user 分段中的 Codex 标题生成模板正文。
+func UnwrapCodexThreadTitle(segments []PromptSegment) []PromptSegment {
+	result := make([]PromptSegment, 0, len(segments))
+	for _, seg := range segments {
+		if !seg.IsUser() {
+			result = append(result, seg)
+			continue
+		}
+
+		unwrapped := unwrapCodexTitleFromText(seg.Content)
+		trimmed := strings.TrimSpace(unwrapped)
+		if trimmed == "" {
+			continue
+		}
+
+		seg.Content = trimmed
+		result = append(result, seg)
+	}
+	return result
+}
+
 // JoinSegments 将所有段落按稳定顺序拼接为完整原文，不进行截断。
 func JoinSegments(segments []PromptSegment) string {
 	normalized := NormalizeSegments(segments)
@@ -357,8 +474,10 @@ func BuildPromptSnapshot(
 		return PromptSnapshot{}, ErrNoPrompt
 	}
 
-	// 剥离 Codex 注入的 AGENTS.md 信封，确保后续只包含用户真实提示词
+	// 剥离 Codex 注入的 AGENTS.md 信封、成对上下文标记块（如环境上下文）及标题生成模板，确保后续只包含用户真实提示词
 	cleanSegments := StripAgentsMdEnvelopes(segments)
+	cleanSegments = StripCodexContextualUser(cleanSegments)
+	cleanSegments = UnwrapCodexThreadTitle(cleanSegments)
 	normalized := NormalizeSegments(cleanSegments)
 
 	fullPrompt := JoinUserSegments(normalized)

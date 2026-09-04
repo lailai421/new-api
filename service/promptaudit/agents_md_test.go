@@ -274,23 +274,36 @@ func TestAgentsMd_LatestTurnOnly_Behavior(t *testing.T) {
 	assert.NotContains(t, snapshot.FullPrompt, "# AGENTS.md instructions")
 }
 
-// AC7: 标题生成请求（user 文本以 Generate a concise, single-line task title 开头、无信封）仍送审。
-func TestAgentsMd_TitleGeneration_Kept(t *testing.T) {
+// 修正前任务 AC7：标准标题生成请求抽出 User prompt 正文送审与落库；非标准模板用户讨论整段送审。
+func TestAgentsMd_TitleGeneration_UnwrappedOrKept(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 
-	titlePrompt := "Generate a concise, single-line task title for the following conversation..."
+	// 1. 标准 Codex 标题生成模板：抽出 User prompt: 正文
+	standardTitleTemplate := "Generate a concise, single-line task title of at most 36 characters for the following conversation.\nDo not answer the request.\n\nUser prompt:\n你是什么模型？"
 	envelopeText := "# AGENTS.md instructions\n\n<INSTRUCTIONS>\n规约\n</INSTRUCTIONS>"
-	segments := []PromptSegment{
+	segments1 := []PromptSegment{
 		{Role: "user", Content: envelopeText},
-		{Role: "user", Content: titlePrompt},
+		{Role: "user", Content: standardTitleTemplate},
 	}
 
-	snapshot, err := BuildPromptSnapshot(c, nil, "chat", "gpt-4o", segments, false)
+	snapshot1, err := BuildPromptSnapshot(c, nil, "chat", "gpt-4o", segments1, false)
 	require.NoError(t, err)
-	assert.Equal(t, titlePrompt, snapshot.FullPrompt)
-	assert.Equal(t, titlePrompt, snapshot.ScanText)
-	assert.Equal(t, 1, snapshot.MessageCount)
-	assert.True(t, strings.HasPrefix(snapshot.ScanText, "Generate a concise, single-line task title"))
+	assert.Equal(t, "你是什么模型？", snapshot1.FullPrompt)
+	assert.Equal(t, "你是什么模型？", snapshot1.ScanText)
+	assert.Equal(t, 1, snapshot1.MessageCount)
+
+	// 2. 非标准模板用户讨论：整段仍送审
+	nonTemplatePrompt := "请为以下对话生成标题：Generate a concise, single-line task title for the following conversation..."
+	segments2 := []PromptSegment{
+		{Role: "user", Content: envelopeText},
+		{Role: "user", Content: nonTemplatePrompt},
+	}
+
+	snapshot2, err := BuildPromptSnapshot(c, nil, "chat", "gpt-4o", segments2, false)
+	require.NoError(t, err)
+	assert.Equal(t, nonTemplatePrompt, snapshot2.FullPrompt)
+	assert.Equal(t, nonTemplatePrompt, snapshot2.ScanText)
+	assert.Equal(t, 1, snapshot2.MessageCount)
 }

@@ -54,6 +54,11 @@ func (s *GormEventStore) Record(
 		return nil
 	}
 
+	// 规则 6：Allow 或 Flag 且判定来源于缓存命中（含并发合并跟随者），不得重复插入事件表
+	if decision != nil && (decision.Kind == DecisionAllow || decision.Kind == DecisionFlag) && decision.FromCache {
+		return nil
+	}
+
 	if s.encryptor == nil {
 		return &GuardError{
 			Code:       ErrorCodeRecordFailed,

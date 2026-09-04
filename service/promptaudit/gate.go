@@ -92,6 +92,9 @@ func CheckRelayRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo, request
 	}
 
 	if cfg.StorePassEvents {
+		if decision != nil && decision.FromCache {
+			return nil
+		}
 		store := GetEventStore()
 		if store == nil {
 			return toRelayError(ErrorCodeRecordFailed, http.StatusServiceUnavailable)
@@ -178,6 +181,9 @@ func CheckMidjourneyRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo) *t
 	}
 
 	if cfg.StorePassEvents {
+		if decision != nil && decision.FromCache {
+			return nil
+		}
 		store := GetEventStore()
 		if store == nil {
 			return toMjError(ErrorCodeRecordFailed, http.StatusServiceUnavailable)
@@ -337,6 +343,12 @@ func CheckTaskRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo, auditMet
 	}
 
 	if cfg.StorePassEvents {
+		if decision != nil && decision.FromCache {
+			if c != nil {
+				c.Set(ContextKeyTaskAuditDone, true)
+			}
+			return nil
+		}
 		store := GetEventStore()
 		if store == nil {
 			return toTaskError(ErrorCodeRecordFailed, http.StatusServiceUnavailable)
@@ -445,6 +457,12 @@ func CheckTaskPluginProtocolRequest(c *gin.Context, relayInfo *relaycommon.Relay
 	}
 
 	if cfg.StorePassEvents {
+		if decision != nil && decision.FromCache {
+			if c != nil {
+				c.Set(ContextKeyTaskAuditDone, true)
+			}
+			return nil
+		}
 		store := GetEventStore()
 		if store == nil {
 			return toTaskError(ErrorCodeRecordFailed, http.StatusServiceUnavailable)

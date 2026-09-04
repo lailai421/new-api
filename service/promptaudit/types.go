@@ -136,6 +136,7 @@ type Decision struct {
 	Result         *NormalizedResult `json:"result,omitempty"`
 	AllowNextStage bool              `json:"allow_next_stage"`
 	LatencyMS      int               `json:"latency_ms,omitempty"`
+	FromCache      bool              `json:"-"` // 仅为内存标记，不参与序列化，不落库
 }
 
 // Endpoint 表示单个 Guard 节点的持久化/内部模型。

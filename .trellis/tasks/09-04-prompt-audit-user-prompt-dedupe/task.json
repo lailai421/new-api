@@ -3,7 +3,7 @@
   "name": "prompt-audit-user-prompt-dedupe",
   "title": "提示词审计只送审真实用户输入并合并重复送审",
   "description": "只送审用户真实提示词：剥离 environment_context 等 Codex 自动片段，展开标题生成模板；同一提示词并发/短时只远程 Guard 一次，Allow 缓存命中不重复写事件。本轮只写方案，批准前不改业务代码。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
