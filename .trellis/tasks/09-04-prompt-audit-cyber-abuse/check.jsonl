@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/09-04-prompt-audit-cyber-abuse/prd.md", "reason": "验收：cyber_abuse 必须 Block、启发式正反例、旧九类行为不变、不保证防封号"}
+{"file": ".trellis/tasks/09-04-prompt-audit-cyber-abuse/design.md", "reason": "核对目录、升级名单、prompt 要点、启发式禁止单字误伤、配置并入规则"}
+{"file": ".trellis/tasks/09-04-prompt-audit-cyber-abuse/research/openai-cyber-abuse.md", "reason": "核对拦截面是否覆盖 OpenAI 公开打击的积木式恶意软件与逆向破解"}
+{"file": "AGENTS.md", "reason": "检查 JSON 包装、i18n、测试风格、未改 relaykit 与受保护品牌信息"}

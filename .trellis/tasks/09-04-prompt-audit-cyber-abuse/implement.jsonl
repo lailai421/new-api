@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/09-04-prompt-audit-cyber-abuse/research/openai-cyber-abuse.md", "reason": "OpenAI Cyber Abuse 执法口径、公开打击样本、双用途误报与分类契约来源"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "scanner id 从后端目录到配置、判决、前端勾选与 i18n 的跨层契约"}
+{"file": "AGENTS.md", "reason": "JSON 必须走 common 包装、relaykit 独立、前端 bun/i18n、测试质量与禁止占位实现"}

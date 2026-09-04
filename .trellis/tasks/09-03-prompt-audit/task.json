@@ -26,7 +26,8 @@
     "09-03-prompt-audit-task-plugin",
     "09-03-prompt-audit-web-console",
     "09-03-prompt-audit-integration-check",
-    "09-04-prompt-audit-llm-classifier"
+    "09-04-prompt-audit-llm-classifier",
+    "09-04-prompt-audit-cyber-abuse"
   ],
   "parent": null,
   "relatedFiles": [],
