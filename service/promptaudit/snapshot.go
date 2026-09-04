@@ -36,6 +36,12 @@ const (
 	RoleTool      = "tool"
 
 	MaxRedactedPreviewRunes = 96
+
+	AgentsMdHeader              = "# AGENTS.md instructions"
+	InstructionsOpenTag         = "<INSTRUCTIONS>"
+	InstructionsCloseTag        = "</INSTRUCTIONS>"
+	AgentsMdReplaceNotice       = "These AGENTS.md instructions replace"
+	AgentsMdNoLongerApplyNotice = "The previously provided AGENTS.md instructions no longer apply."
 )
 
 // PromptSegment 描述从客户端输入中提取的一段结构化文本及其所属角色。
@@ -69,6 +75,102 @@ func NormalizeSegments(segments []PromptSegment) []PromptSegment {
 			seg.Content = trimmed
 			result = append(result, seg)
 		}
+	}
+	return result
+}
+
+// IsAgentsMdEnvelope 判定给定的文本是否为完整的 Codex AGENTS.md 信封或通知。
+// 识别契约与 Codex 保持一致：文本以 # AGENTS.md instructions 起头，且同时包含 <INSTRUCTIONS> 与 </INSTRUCTIONS>，
+// 或者属于替换/移除通知变体。
+func IsAgentsMdEnvelope(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	if !strings.HasPrefix(trimmed, AgentsMdHeader) {
+		return false
+	}
+	openIdx := strings.Index(trimmed, InstructionsOpenTag)
+	closeIdx := strings.Index(trimmed, InstructionsCloseTag)
+	if openIdx != -1 && closeIdx != -1 && openIdx < closeIdx {
+		return true
+	}
+	if strings.Contains(trimmed, AgentsMdReplaceNotice) {
+		return true
+	}
+	if strings.Contains(trimmed, AgentsMdNoLongerApplyNotice) {
+		return true
+	}
+	return false
+}
+
+// stripAgentsMdEnvelopeFromText 从单段文本中剥离 AGENTS.md 信封或通知。
+// 整段是信封返回空字符串；混合段切除信封闭区间保留剩余真实文本。
+func stripAgentsMdEnvelopeFromText(text string) string {
+	for {
+		headerIdx := strings.Index(text, AgentsMdHeader)
+		if headerIdx == -1 {
+			break
+		}
+
+		sub := text[headerIdx:]
+		openIdx := strings.Index(sub, InstructionsOpenTag)
+		closeIdx := strings.Index(sub, InstructionsCloseTag)
+
+		// 完整的 <INSTRUCTIONS> ... </INSTRUCTIONS> 信封
+		if openIdx != -1 && closeIdx != -1 && openIdx < closeIdx {
+			endIdx := headerIdx + closeIdx + len(InstructionsCloseTag)
+			text = text[:headerIdx] + text[endIdx:]
+			continue
+		}
+
+		// 替换通知
+		replaceIdx := strings.Index(sub, AgentsMdReplaceNotice)
+		if replaceIdx != -1 {
+			endNotice := replaceIdx + len(AgentsMdReplaceNotice)
+			if newlineIdx := strings.Index(sub[endNotice:], "\n"); newlineIdx != -1 {
+				endIdx := headerIdx + endNotice + newlineIdx
+				text = text[:headerIdx] + text[endIdx:]
+			} else {
+				text = text[:headerIdx]
+			}
+			continue
+		}
+
+		// 移除通知
+		removeIdx := strings.Index(sub, AgentsMdNoLongerApplyNotice)
+		if removeIdx != -1 {
+			endNotice := removeIdx + len(AgentsMdNoLongerApplyNotice)
+			if newlineIdx := strings.Index(sub[endNotice:], "\n"); newlineIdx != -1 {
+				endIdx := headerIdx + endNotice + newlineIdx
+				text = text[:headerIdx] + text[endIdx:]
+			} else {
+				text = text[:headerIdx]
+			}
+			continue
+		}
+
+		// 虽包含 header 但不符合信封或通知契约（如用户普通讨论），避免死循环跳出
+		break
+	}
+	return text
+}
+
+// StripAgentsMdEnvelopes 剥离 Codex 注入的 AGENTS.md 信封。
+// 非 user 分段原样保留；整段为信封的 user 分段丢弃；混合段切除信封区间保留真实文本。
+func StripAgentsMdEnvelopes(segments []PromptSegment) []PromptSegment {
+	result := make([]PromptSegment, 0, len(segments))
+	for _, seg := range segments {
+		if !seg.IsUser() {
+			result = append(result, seg)
+			continue
+		}
+
+		stripped := stripAgentsMdEnvelopeFromText(seg.Content)
+		trimmed := strings.TrimSpace(stripped)
+		if trimmed == "" {
+			continue
+		}
+
+		seg.Content = trimmed
+		result = append(result, seg)
 	}
 	return result
 }
@@ -251,10 +353,13 @@ func BuildPromptSnapshot(
 	segments []PromptSegment,
 	latestTurnOnly bool,
 ) (PromptSnapshot, error) {
-	normalized := NormalizeSegments(segments)
-	if len(normalized) == 0 {
+	if len(NormalizeSegments(segments)) == 0 {
 		return PromptSnapshot{}, ErrNoPrompt
 	}
+
+	// 剥离 Codex 注入的 AGENTS.md 信封，确保后续只包含用户真实提示词
+	cleanSegments := StripAgentsMdEnvelopes(segments)
+	normalized := NormalizeSegments(cleanSegments)
 
 	fullPrompt := JoinUserSegments(normalized)
 

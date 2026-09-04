@@ -474,5 +474,68 @@ func TestLLMClassifier_DeepSeekV4ThinkingDisabled(t *testing.T) {
 	thinking2, ok := capturedPayload["thinking"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "disabled", thinking2["type"])
+
+	// 3. deepseek/deepseek-v4-flash 模型测试（带厂商前缀，AC8 核心场景） -> 注入 thinking: disabled
+	ep3 := ActiveEndpoint{
+		ID:        "ep-prefix-v4-flash",
+		Protocol:  ProtocolLLMClassifier,
+		BaseURL:   server.URL,
+		Model:     "deepseek/deepseek-v4-flash",
+		TimeoutMS: 5000,
+	}
+	res3, err := scanner.Scan(context.Background(), ep3, "测试输入", AllScannerIDs)
+	require.NoError(t, err)
+	assert.Equal(t, "Safe", res3.Safety)
+	assert.Equal(t, "deepseek/deepseek-v4-flash", capturedPayload["model"])
+	thinking3, ok := capturedPayload["thinking"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "disabled", thinking3["type"])
+
+	// 4. deepseek/deepseek-v4-flash-none 模型测试（带厂商前缀且带 -none 后缀） -> 去除 -none 后缀并注入 thinking: disabled
+	ep4 := ActiveEndpoint{
+		ID:        "ep-prefix-v4-flash-none",
+		Protocol:  ProtocolLLMClassifier,
+		BaseURL:   server.URL,
+		Model:     "deepseek/deepseek-v4-flash-none",
+		TimeoutMS: 5000,
+	}
+	res4, err := scanner.Scan(context.Background(), ep4, "测试输入", AllScannerIDs)
+	require.NoError(t, err)
+	assert.Equal(t, "Safe", res4.Safety)
+	assert.Equal(t, "deepseek/deepseek-v4-flash", capturedPayload["model"])
+	thinking4, ok := capturedPayload["thinking"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "disabled", thinking4["type"])
+
+	// 5. 大小写变体 DeepSeek/DeepSeek-V4-Flash-None -> 去除 -none 后缀并注入 thinking: disabled
+	ep5 := ActiveEndpoint{
+		ID:        "ep-case-variant",
+		Protocol:  ProtocolLLMClassifier,
+		BaseURL:   server.URL,
+		Model:     "DeepSeek/DeepSeek-V4-Flash-None",
+		TimeoutMS: 5000,
+	}
+	res5, err := scanner.Scan(context.Background(), ep5, "测试输入", AllScannerIDs)
+	require.NoError(t, err)
+	assert.Equal(t, "Safe", res5.Safety)
+	assert.Equal(t, "DeepSeek/DeepSeek-V4-Flash", capturedPayload["model"])
+	thinking5, ok := capturedPayload["thinking"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "disabled", thinking5["type"])
+
+	// 6. gpt-4o 模型测试 -> 绝不得注入 thinking (AC8)
+	capturedPayload = nil
+	ep6 := ActiveEndpoint{
+		ID:        "ep-gpt-4o",
+		Protocol:  ProtocolLLMClassifier,
+		BaseURL:   server.URL,
+		Model:     "gpt-4o",
+		TimeoutMS: 5000,
+	}
+	res6, err := scanner.Scan(context.Background(), ep6, "测试输入", AllScannerIDs)
+	require.NoError(t, err)
+	assert.Equal(t, "Safe", res6.Safety)
+	assert.Equal(t, "gpt-4o", capturedPayload["model"])
+	assert.Nil(t, capturedPayload["thinking"], "gpt-4o 绝不得注入 thinking")
 }
 

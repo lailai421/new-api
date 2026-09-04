@@ -746,6 +746,7 @@
     "Built-in: phone fingerprint/face, or Windows Hello; External: USB security key": "內置：手機指紋/面部，或 Windows Hello；外部：USB 安全金鑰",
     "by": "由",
     "By category": "按行業",
+    "By default, all user prompts in the request are scanned and stored, excluding client instructions, AGENTS.md envelopes, system prompts, and tool results. Enabling this scans only the latest user turn, while all user prompts in the request are still stored for review.": "預設掃描並保存該請求全部使用者真實提示詞，排除客戶端人設、AGENTS.md 信封、系統提示與工具結果。開啟後僅掃描最新一輪使用者輸入，詳情中仍會保存該請求全部使用者真實提示詞以供複核。",
     "By default, all user prompts in the request are scanned and stored, excluding client instructions, system prompts, and tool results. Enabling this scans only the latest user turn, while all user prompts in the request are still stored for review.": "預設掃描並保存該請求全部使用者提示詞，排除客戶端人設、系統提示與工具結果。開啟後僅掃描最新一輪使用者輸入，詳情中仍會保存該請求全部使用者提示詞以供複核。",
     "By model author": "按模型廠商",
     "By quota": "按額度",

@@ -3,7 +3,7 @@
   "name": "prompt-audit-exclude-agents-md",
   "title": "提示词审计排除 AGENTS.md 并修复 DeepSeek 思考链禁用",
   "description": "从送审和落库中剥离 Codex AGENTS.md 信封，只保留用户真实提示词；修复 LLM 分类器对 deepseek/deepseek-v4-flash 的思考链禁用判断。本轮只写方案，不改业务代码。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

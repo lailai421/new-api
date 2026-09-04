@@ -746,6 +746,7 @@
     "Built-in: phone fingerprint/face, or Windows Hello; External: USB security key": "Intégré : empreinte digitale/visage du téléphone, ou Windows Hello ; Externe : clé de sécurité USB",
     "by": "par",
     "By category": "Par catégorie",
+    "By default, all user prompts in the request are scanned and stored, excluding client instructions, AGENTS.md envelopes, system prompts, and tool results. Enabling this scans only the latest user turn, while all user prompts in the request are still stored for review.": "Par défaut, toutes les invites utilisateur de la requête sont analysées et stockées, à l'exclusion des instructions client, des enveloppes AGENTS.md, des invites système et des résultats d'outils. L'activation de cette option n'analyse que le dernier tour de l'utilisateur, tandis que toutes les invites utilisateur de la requête sont toujours stockées pour examen.",
     "By default, all user prompts in the request are scanned and stored, excluding client instructions, system prompts, and tool results. Enabling this scans only the latest user turn, while all user prompts in the request are still stored for review.": "Par défaut, toutes les invites utilisateur de la requête sont analysées et stockées, à l'exclusion des instructions client, des invites système et des résultats d'outils. L'activation de cette option n'analyse que le dernier tour de l'utilisateur, tandis que toutes les invites utilisateur de la requête sont toujours stockées pour examen.",
     "By model author": "Par auteur du modèle",
     "By quota": "Par quota",
