@@ -45,6 +45,18 @@ func TestParseQwen3Guard_Controversial_Elevated(t *testing.T) {
 		{raw: "Personal Identifying Information", expected: "pii"},
 		{raw: "Suicide & Self-Harm", expected: "suicide_and_self_harm"},
 		{raw: "Suicide and Self Harm", expected: "suicide_and_self_harm"},
+		{raw: "Cyber Abuse", expected: "cyber_abuse"},
+		{raw: "cyber_abuse", expected: "cyber_abuse"},
+		{raw: "malware", expected: "cyber_abuse"},
+		{raw: "c2", expected: "cyber_abuse"},
+		{raw: "rat", expected: "cyber_abuse"},
+		{raw: "exploit", expected: "cyber_abuse"},
+		{raw: "reverse engineering", expected: "cyber_abuse"},
+		{raw: "cracking", expected: "cyber_abuse"},
+		{raw: "网络滥用", expected: "cyber_abuse"},
+		{raw: "木马", expected: "cyber_abuse"},
+		{raw: "破解", expected: "cyber_abuse"},
+		{raw: "逆向", expected: "cyber_abuse"},
 	}
 
 	for _, tc := range elevatedCategories {
@@ -191,4 +203,40 @@ func TestApplySafetyDecision_Direct(t *testing.T) {
 	assert.Equal(t, ActionWarn, resDisabled.Action)
 	assert.Empty(t, resDisabled.MatchedScanners)
 	assert.Equal(t, []string{"violent"}, resDisabled.Categories)
+
+	// Controversial 命中 cyber_abuse 必须升格为 Block
+	resCyberContro := ApplySafetyDecision("Controversial", []string{"cyber_abuse"}, AllScannerIDs)
+	assert.Equal(t, EventCritical, resCyberContro.Decision)
+	assert.Equal(t, ActionBlock, resCyberContro.Action)
+	assert.Equal(t, []string{"cyber_abuse"}, resCyberContro.MatchedScanners)
+
+	// Unsafe 仅命中禁用的 cyber_abuse -> Flag / High / Warn
+	resCyberDisabled := ApplySafetyDecision("Unsafe", []string{"cyber_abuse"}, []string{"pii"})
+	assert.Equal(t, EventFlag, resCyberDisabled.Decision)
+	assert.Equal(t, RiskHigh, resCyberDisabled.RiskLevel)
+	assert.Equal(t, ActionWarn, resCyberDisabled.Action)
+	assert.Empty(t, resCyberDisabled.MatchedScanners)
+	assert.Equal(t, []string{"cyber_abuse"}, resCyberDisabled.Categories)
 }
+
+func TestScannerCatalog_CyberAbuseAndDescriptionZH(t *testing.T) {
+	require.Len(t, AllScannerIDs, 10)
+	assert.Equal(t, "cyber_abuse", AllScannerIDs[9])
+
+	for _, id := range AllScannerIDs {
+		def, ok := ScannerCatalog[id]
+		require.True(t, ok, "scanner %s must exist in catalog", id)
+		assert.NotEmpty(t, def.Label, "scanner %s must have Label", id)
+		assert.NotEmpty(t, def.LabelZH, "scanner %s must have LabelZH", id)
+		assert.NotEmpty(t, def.Description, "scanner %s must have Description", id)
+		assert.NotEmpty(t, def.DescriptionZH, "scanner %s must have DescriptionZH", id)
+	}
+
+	cyber := ScannerCatalog["cyber_abuse"]
+	assert.Equal(t, "cyber_abuse", cyber.ID)
+	assert.Equal(t, "Cyber Abuse", cyber.Label)
+	assert.Equal(t, "网络滥用", cyber.LabelZH)
+	assert.Equal(t, "Malware, exploits, unauthorized access, reverse engineering, and cracking", cyber.Description)
+	assert.Equal(t, "恶意软件、漏洞利用、未授权访问、逆向与破解", cyber.DescriptionZH)
+}
+

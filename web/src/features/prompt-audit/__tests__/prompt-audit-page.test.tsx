@@ -388,4 +388,80 @@ describe('PromptAuditPage integration', () => {
       )
     })
   })
+
+  it('displays Cyber Abuse policy notice and warns when only Qwen3Guard endpoints exist', async () => {
+    vi.spyOn(api, 'getPromptAuditRuntime').mockResolvedValue({
+      mode: 'off',
+      expected_config_version: 1,
+      active_config_version: 1,
+      degraded: false,
+      enabled_endpoints: 1,
+      uncovered_plugins: [],
+    })
+
+    vi.spyOn(api, 'getPromptAuditConfig').mockResolvedValue({
+      config: {
+        enabled: false,
+        effective_mode: 'off',
+        latest_turn_only: false,
+        store_pass_events: true,
+        all_groups: true,
+        groups: [],
+        scanners: ['cyber_abuse'],
+        retention_days: 0,
+        strategy: 'priority',
+        endpoints: [
+          {
+            id: 'ep-qwen-only',
+            name: 'Qwen Node',
+            protocol: 'openai_compatible',
+            base_url: 'http://127.0.0.1:8000',
+            model: 'sileader/qwen3guard:0.6b',
+            timeout_ms: 3000,
+            input_limit: 4000,
+            enabled: true,
+            has_token: true,
+            token_status: 'configured',
+          },
+        ],
+        config_version: 1,
+        updated_at: 1772500000,
+        updated_by: 1,
+      },
+      scanners: [
+        {
+          id: 'cyber_abuse',
+          label: 'Cyber Abuse',
+          label_zh: '网络滥用',
+          description:
+            'Malware, exploits, unauthorized access, reverse engineering, and cracking',
+          description_zh: '恶意软件、漏洞利用、未授权访问、逆向与破解',
+        },
+      ],
+      config_version: 1,
+    })
+
+    render(
+      <QueryClientProvider client={createTestClient()}>
+        <PromptAuditPage />
+      </QueryClientProvider>
+    )
+
+    const policyTabTrigger = await screen.findByRole('tab', {
+      name: /Policy & Scanners/i,
+    })
+    fireEvent.click(policyTabTrigger)
+
+    // 1. 验证展示了固定政策说明
+    await screen.findByText(/OpenAI\/Codex Cyber Abuse policies/i)
+
+    // 2. 验证展示了 Qwen3Guard 对 Cyber Abuse 不可靠的警告
+    await screen.findByText('Qwen3Guard Unreliable for Cyber Abuse')
+    expect(
+      screen.getByText(
+        /Qwen3Guard cannot reliably detect Cyber Abuse risks/i
+      )
+    ).toBeInTheDocument()
+  })
 })
+

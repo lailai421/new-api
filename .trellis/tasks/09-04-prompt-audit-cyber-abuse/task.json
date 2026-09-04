@@ -3,7 +3,7 @@
   "name": "prompt-audit-cyber-abuse",
   "title": "提示词审计拦截 OpenAI Cyber Abuse",
   "description": "在现有提示词审计上增加与 OpenAI Cyber Abuse 对齐的风险分类与分类器策略，同步阻断恶意软件、未授权入侵、逆向破解等请求，降低 Codex/OpenAI 账号被警告或封禁的风险。方案已于 2026-09-04 审核通过，新窗口按 handoff-prompt.md 实施。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

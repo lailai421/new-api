@@ -50,6 +50,7 @@ export const DEFAULT_SCANNER_IDS = [
   'politically_sensitive_topics',
   'copyright_violation',
   'jailbreak',
+  'cyber_abuse',
 ] as const
 
 export const SCANNER_LABEL_KEYS: Record<string, string> = {
@@ -62,6 +63,7 @@ export const SCANNER_LABEL_KEYS: Record<string, string> = {
   politically_sensitive_topics: 'Politically Sensitive Topics',
   copyright_violation: 'Copyright Violation',
   jailbreak: 'Jailbreak',
+  cyber_abuse: 'Cyber Abuse',
 }
 
 export const DECISION_CONFIG: Record<

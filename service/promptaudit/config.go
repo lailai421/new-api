@@ -26,8 +26,21 @@ type Config struct {
 	ChangeSummary   string     `json:"change_summary"`
 }
 
+// legacyDefaultScannerIDs 冻结旧九类默认分类集合，用于在配置规范化时平滑升级到十类。
+var legacyDefaultScannerIDs = []string{
+	"violent",
+	"non_violent_illegal_acts",
+	"sexual_content_or_sexual_acts",
+	"pii",
+	"suicide_and_self_harm",
+	"unethical_acts",
+	"politically_sensitive_topics",
+	"copyright_violation",
+	"jailbreak",
+}
+
 // DefaultConfig 返回审计默认安全配置。
-// 规则：默认关闭、全部分组、审计完整输入、保存 Pass 事件、永久保留(0)、九类风险全开、priority 策略。
+// 规则：默认关闭、全部分组、审计完整输入、保存 Pass 事件、永久保留(0)、默认全部分类全开、priority 策略。
 func DefaultConfig() Config {
 	return Config{
 		Enabled:         false,
@@ -115,6 +128,10 @@ func (c *Config) NormalizeAndValidate(hasStableSecret bool) error {
 			return fmt.Errorf("unknown scanner category: %s", raw)
 		}
 		scannerSet[canonical] = struct{}{}
+	}
+	// 若配置的分类集合严格等于升级前的旧九类默认全集，自动并入 cyber_abuse
+	if isLegacyDefaultScanners(scannerSet) {
+		scannerSet["cyber_abuse"] = struct{}{}
 	}
 	// 按 AllScannerIDs 的稳定顺序排序
 	normalizedScanners := make([]string, 0, len(scannerSet))
@@ -329,4 +346,16 @@ func (c *Config) ToActive(encryptor Encryptor) ActiveConfig {
 		UpdatedBy:       c.UpdatedBy,
 		ChangeSummary:   c.ChangeSummary,
 	}
+}
+
+func isLegacyDefaultScanners(scannerSet map[string]struct{}) bool {
+	if len(scannerSet) != len(legacyDefaultScannerIDs) {
+		return false
+	}
+	for _, id := range legacyDefaultScannerIDs {
+		if _, ok := scannerSet[id]; !ok {
+			return false
+		}
+	}
+	return true
 }

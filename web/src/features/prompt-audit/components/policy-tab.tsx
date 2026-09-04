@@ -46,7 +46,11 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { getUserGroups } from '@/lib/api'
 
-import { DEFAULT_SCANNER_IDS, SCANNER_LABEL_KEYS } from '../constants'
+import {
+  DEFAULT_SCANNER_IDS,
+  PROTOCOL_OPENAI_COMPATIBLE,
+  SCANNER_LABEL_KEYS,
+} from '../constants'
 import type { PromptAuditConfigFormValues } from '../lib/schema'
 import type { ScannerCatalogDefinition } from '../types'
 
@@ -69,6 +73,14 @@ export function PolicyTab({
   const endpoints = form.watch('endpoints') || []
   const isAuditEnabled = form.watch('enabled')
   const hasEnabledEndpoint = endpoints.some((ep) => ep.enabled)
+  const enabledEndpoints = endpoints.filter((ep) => ep.enabled)
+  const isOnlyOpenAICompatible =
+    enabledEndpoints.length > 0 &&
+    enabledEndpoints.every(
+      (ep) =>
+        (ep.protocol || PROTOCOL_OPENAI_COMPATIBLE) ===
+        PROTOCOL_OPENAI_COMPATIBLE
+    )
 
   // 获取用户可选分组列表
   const { data: userGroupsData } = useQuery({
@@ -92,6 +104,7 @@ export function PolicyTab({
 
   const allGroups = form.watch('all_groups')
   const selectedScanners = form.watch('scanners') || []
+  const hasCyberAbuseSelected = selectedScanners.includes('cyber_abuse')
 
   // 格式化 Catalog 扫描器定义
   const scanners = useMemo(() => {
@@ -433,7 +446,43 @@ export function PolicyTab({
             </Button>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className='space-y-4'>
+          {/* Cyber Abuse 策略固定说明 */}
+          <Alert className='border-border/80 bg-muted/40'>
+            <AlertDescription className='text-muted-foreground text-xs leading-relaxed'>
+              {t(
+                'The Cyber Abuse category intercepts requests involving malware, unauthorized access, reverse engineering, and cracking that could trigger upstream OpenAI/Codex Cyber Abuse policies. This cannot guarantee that upstream accounts will never receive warnings. Codex traffic must be routed through this gateway to take effect.'
+              )}
+            </AlertDescription>
+          </Alert>
+
+          {/* 仅配置 Qwen3Guard 时对 Cyber Abuse 提示不可靠 */}
+          {hasCyberAbuseSelected && isOnlyOpenAICompatible && (
+            <Alert className='border-warning/40 bg-warning/5 text-warning-foreground'>
+              <AlertTriangle className='text-warning size-4' />
+              <AlertTitle>{t('Qwen3Guard Unreliable for Cyber Abuse')}</AlertTitle>
+              <AlertDescription className='mt-1 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
+                <span className='text-muted-foreground text-xs leading-relaxed'>
+                  {t(
+                    'Qwen3Guard cannot reliably detect Cyber Abuse risks. Please configure an LLM Classifier endpoint in the Guard Endpoints tab for effective detection.'
+                  )}
+                </span>
+                {onNavigateToEndpoints && (
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    onClick={onNavigateToEndpoints}
+                    className='gap-1.5 self-start whitespace-nowrap sm:self-auto'
+                  >
+                    <Server className='size-3.5' />
+                    <span>{t('Go to Guard Endpoints')}</span>
+                  </Button>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+
           <FormField
             control={form.control}
             name='scanners'

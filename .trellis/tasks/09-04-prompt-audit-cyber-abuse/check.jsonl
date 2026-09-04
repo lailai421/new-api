@@ -2,3 +2,5 @@
 {"file": ".trellis/tasks/09-04-prompt-audit-cyber-abuse/design.md", "reason": "核对目录、升级名单、prompt 要点、启发式禁止单字误伤、配置并入规则"}
 {"file": ".trellis/tasks/09-04-prompt-audit-cyber-abuse/research/openai-cyber-abuse.md", "reason": "核对拦截面是否覆盖 OpenAI 公开打击的积木式恶意软件与逆向破解"}
 {"file": "AGENTS.md", "reason": "检查 JSON 包装、i18n、测试风格、未改 relaykit 与受保护品牌信息"}
+{"file": ".trellis/tasks/09-04-prompt-audit-cyber-abuse/implement.md", "reason": "核对五个阶段实施项完整性与测试验证"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨层一致性核对：后端目录、配置归一、启发式、判决、前端UI与i18n"}

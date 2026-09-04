@@ -51,6 +51,8 @@ describe('validateBaseUrl', () => {
 describe('promptAuditConfigFormSchema', () => {
   it('validates default config form values when disabled', () => {
     const defaultVals = createDefaultConfigFormValues()
+    expect(defaultVals.scanners).toContain('cyber_abuse')
+    expect(defaultVals.scanners).toHaveLength(10)
     const parsed = promptAuditConfigFormSchema.safeParse(defaultVals)
     expect(parsed.success).toBe(true)
   })

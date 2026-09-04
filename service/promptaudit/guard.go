@@ -382,6 +382,47 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 	}
 	LogGuardInfo(ctx, EventGuardStarted, baseFields)
 
+	// 本地高置信启发式前置检查（全文 ScanText，不分片）
+	// 仅在审计启用且 scanners 包含 cyber_abuse 时运行；命中直接判定 Unsafe Block 并跳过远程 Guard
+	if _, ok := cfg.ScannersMap["cyber_abuse"]; ok {
+		if ruleName, matched := MatchCyberAbuseHeuristics(snapshot.ScanText); matched {
+			heuristicResult := &NormalizedResult{
+				Decision:        EventCritical,
+				RiskLevel:       RiskCritical,
+				Action:          ActionBlock,
+				Safety:          "Unsafe",
+				Categories:      []string{"cyber_abuse"},
+				MatchedScanners: []string{"cyber_abuse"},
+				ScannerScores:   map[string]float64{"cyber_abuse": 1.0},
+				ScannerEvidence: map[string]string{"cyber_abuse": ruleName},
+				ScannerBackend:  "heuristic-cyber-abuse",
+				ScannerVersion:  "heuristic",
+				PolicyID:        StrategyPriority,
+				PolicyVersion:   1,
+				ChunkTotal:      1,
+				LatencyMS:       int(time.Since(start).Milliseconds()),
+			}
+			decision := &Decision{
+				Kind:           DecisionBlock,
+				HTTPStatus:     403,
+				ErrorCode:      ErrorCodeBlocked,
+				Result:         heuristicResult,
+				AllowNextStage: false,
+			}
+			blockFields := copyLogFields(baseFields)
+			blockFields["status"] = "blocked"
+			blockFields["decision"] = DecisionBlock
+			blockFields["risk_level"] = heuristicResult.RiskLevel
+			blockFields["action"] = heuristicResult.Action
+			blockFields["guard_endpoint_id"] = "heuristic"
+			blockFields["chunk_total"] = 1
+			blockFields["latency_ms"] = heuristicResult.LatencyMS
+			blockFields["error_code"] = ErrorCodeBlocked
+			LogGuardWarn(ctx, EventGuardBlocked, blockFields)
+			return decision, nil
+		}
+	}
+
 	endpoints := cfg.EnabledEndpoints()
 	if len(endpoints) == 0 {
 		failFields := copyLogFields(baseFields)

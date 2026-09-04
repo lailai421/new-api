@@ -144,6 +144,39 @@ func TestNormalizeAndValidate_Scanners(t *testing.T) {
 	assert.Contains(t, err.Error(), "at least one scanner category")
 }
 
+func TestNormalizeAndValidate_LegacyScannersUpgrade(t *testing.T) {
+	// 1. 默认包含 cyber_abuse
+	cfgDefault := DefaultConfig()
+	assert.Contains(t, cfgDefault.Scanners, "cyber_abuse")
+
+	// 2. 旧九类全集（无论顺序与大小写）规范化后自动并入 cyber_abuse
+	cfgLegacy := DefaultConfig()
+	cfgLegacy.Scanners = []string{
+		"jailbreak", "copyright_violation", "politically_sensitive_topics",
+		"unethical_acts", "suicide_and_self_harm", "pii",
+		"sexual_content_or_sexual_acts", "non_violent_illegal_acts", "violent",
+	}
+	err := cfgLegacy.NormalizeAndValidate(true)
+	require.NoError(t, err)
+	assert.Equal(t, AllScannerIDs, cfgLegacy.Scanners)
+	assert.Contains(t, cfgLegacy.Scanners, "cyber_abuse")
+
+	// 3. 自定义子集不自动增加 cyber_abuse
+	cfgCustom := DefaultConfig()
+	cfgCustom.Scanners = []string{"violent", "pii"}
+	err = cfgCustom.NormalizeAndValidate(true)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"violent", "pii"}, cfgCustom.Scanners)
+	assert.NotContains(t, cfgCustom.Scanners, "cyber_abuse")
+
+	// 4. 已包含 cyber_abuse 不重复添加
+	cfgAlready := DefaultConfig()
+	cfgAlready.Scanners = []string{"violent", "cyber_abuse", "pii", "cyber_abuse"}
+	err = cfgAlready.NormalizeAndValidate(true)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"violent", "pii", "cyber_abuse"}, cfgAlready.Scanners)
+}
+
 func TestNormalizeAndValidate_Endpoints(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Endpoints = []Endpoint{

@@ -17,62 +17,79 @@ var AllScannerIDs = []string{
 	"politically_sensitive_topics",
 	"copyright_violation",
 	"jailbreak",
+	"cyber_abuse",
 }
 
 var ScannerCatalog = map[string]ScannerDefinition{
 	"violent": {
-		ID:          "violent",
-		Label:       "Violent",
-		LabelZH:     "暴力",
-		Description: "Violence or threats of violence",
+		ID:            "violent",
+		Label:         "Violent",
+		LabelZH:       "暴力",
+		Description:   "Violence or threats of violence",
+		DescriptionZH: "暴力或暴力威胁",
 	},
 	"non_violent_illegal_acts": {
-		ID:          "non_violent_illegal_acts",
-		Label:       "Non-violent Illegal Acts",
-		LabelZH:     "非暴力违法行为",
-		Description: "Non-violent illegal activity",
+		ID:            "non_violent_illegal_acts",
+		Label:         "Non-violent Illegal Acts",
+		LabelZH:       "非暴力违法行为",
+		Description:   "Non-violent illegal activity",
+		DescriptionZH: "非暴力违法犯罪活动",
 	},
 	"sexual_content_or_sexual_acts": {
-		ID:          "sexual_content_or_sexual_acts",
-		Label:       "Sexual Content or Sexual Acts",
-		LabelZH:     "性内容或性行为",
-		Description: "Sexual content or sexual acts",
+		ID:            "sexual_content_or_sexual_acts",
+		Label:         "Sexual Content or Sexual Acts",
+		LabelZH:       "性内容或性行为",
+		Description:   "Sexual content or sexual acts",
+		DescriptionZH: "性内容或性行为",
 	},
 	"pii": {
-		ID:          "pii",
-		Label:       "PII",
-		LabelZH:     "个人敏感信息",
-		Description: "Personal identifying information",
+		ID:            "pii",
+		Label:         "PII",
+		LabelZH:       "个人敏感信息",
+		Description:   "Personal identifying information",
+		DescriptionZH: "个人身份与隐私敏感信息",
 	},
 	"suicide_and_self_harm": {
-		ID:          "suicide_and_self_harm",
-		Label:       "Suicide & Self-Harm",
-		LabelZH:     "自杀与自残",
-		Description: "Suicide or self-harm",
+		ID:            "suicide_and_self_harm",
+		Label:         "Suicide & Self-Harm",
+		LabelZH:       "自杀与自残",
+		Description:   "Suicide or self-harm",
+		DescriptionZH: "自杀或自残倾向与行为",
 	},
 	"unethical_acts": {
-		ID:          "unethical_acts",
-		Label:       "Unethical Acts",
-		LabelZH:     "不道德行为",
-		Description: "Unethical behavior",
+		ID:            "unethical_acts",
+		Label:         "Unethical Acts",
+		LabelZH:       "不道德行为",
+		Description:   "Unethical behavior",
+		DescriptionZH: "不道德或违背公序良俗的行为",
 	},
 	"politically_sensitive_topics": {
-		ID:          "politically_sensitive_topics",
-		Label:       "Politically Sensitive Topics",
-		LabelZH:     "政治敏感话题",
-		Description: "Politically sensitive topics",
+		ID:            "politically_sensitive_topics",
+		Label:         "Politically Sensitive Topics",
+		LabelZH:       "政治敏感话题",
+		Description:   "Politically sensitive topics",
+		DescriptionZH: "政治敏感与争议话题",
 	},
 	"copyright_violation": {
-		ID:          "copyright_violation",
-		Label:       "Copyright Violation",
-		LabelZH:     "版权侵权",
-		Description: "Copyright infringement",
+		ID:            "copyright_violation",
+		Label:         "Copyright Violation",
+		LabelZH:       "版权侵权",
+		Description:   "Copyright infringement",
+		DescriptionZH: "版权侵权与盗版侵权",
 	},
 	"jailbreak": {
-		ID:          "jailbreak",
+		ID:            "jailbreak",
 		Label:       "Jailbreak",
 		LabelZH:     "越狱攻击",
-		Description: "Prompt injection or jailbreak attempt",
+		Description:   "Prompt injection or jailbreak attempt",
+		DescriptionZH: "大模型提示词注入或越狱攻击",
+	},
+	"cyber_abuse": {
+		ID:            "cyber_abuse",
+		Label:         "Cyber Abuse",
+		LabelZH:       "网络滥用",
+		Description:   "Malware, exploits, unauthorized access, reverse engineering, and cracking",
+		DescriptionZH: "恶意软件、漏洞利用、未授权访问、逆向与破解",
 	},
 }
 
@@ -97,6 +114,22 @@ var categoryAliases = map[string]string{
 	"copyright":                         "copyright_violation",
 	"jailbreak":                         "jailbreak",
 	"prompt injection":                  "jailbreak",
+	"cyber abuse":                       "cyber_abuse",
+	"cyber":                             "cyber_abuse",
+	"cyberattack":                       "cyber_abuse",
+	"malware":                           "cyber_abuse",
+	"hacking":                           "cyber_abuse",
+	"exploit":                           "cyber_abuse",
+	"reverse engineering":               "cyber_abuse",
+	"cracking":                          "cyber_abuse",
+	"ransomware":                        "cyber_abuse",
+	"rat":                               "cyber_abuse",
+	"c2":                                "cyber_abuse",
+	"网络滥用":                              "cyber_abuse",
+	"恶意软件":                              "cyber_abuse",
+	"木马":                                "cyber_abuse",
+	"破解":                                "cyber_abuse",
+	"逆向":                                "cyber_abuse",
 }
 
 // NormalizeCategory 将分类名称归一化为标准的下划线标识符。
@@ -250,7 +283,7 @@ func unknownCategoryID(value string) string {
 }
 
 func isElevatedControversial(category string) bool {
-	return category == "jailbreak" || category == "pii" || category == "suicide_and_self_harm"
+	return category == "jailbreak" || category == "pii" || category == "suicide_and_self_harm" || category == "cyber_abuse"
 }
 
 func orderedScannerKeys(values map[string]struct{}) []string {

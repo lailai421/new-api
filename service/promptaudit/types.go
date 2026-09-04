@@ -241,10 +241,11 @@ type PublicConfig struct {
 
 // ScannerDefinition 描述分类元信息。
 type ScannerDefinition struct {
-	ID          string `json:"id"`
-	Label       string `json:"label"`
-	LabelZH     string `json:"label_zh"`
-	Description string `json:"description"`
+	ID            string `json:"id"`
+	Label         string `json:"label"`
+	LabelZH       string `json:"label_zh"`
+	Description   string `json:"description"`
+	DescriptionZH string `json:"description_zh"`
 }
 
 // GuardError 表示 Guard 执行或解析阶段的确定性错误。
