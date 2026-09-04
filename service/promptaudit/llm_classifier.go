@@ -92,8 +92,9 @@ func (s *LLMClassifierScanner) Scan(ctx context.Context, endpoint ActiveEndpoint
 		return nil, &GuardError{Code: ErrorCodeUnavailable, Cause: err}
 	}
 
+	modelName := endpoint.Model
 	payload := map[string]any{
-		"model": endpoint.Model,
+		"model": modelName,
 		"messages": []map[string]string{
 			{"role": "system", "content": LLMClassifierSystemPrompt},
 			{"role": "user", "content": FormatLLMClassifierUserMessage(chunk)},
@@ -101,6 +102,17 @@ func (s *LLMClassifierScanner) Scan(ctx context.Context, endpoint ActiveEndpoint
 		"temperature": 0,
 		"max_tokens":  DefaultLLMMaxTokens,
 		"seed":        DefaultLLMSeed,
+	}
+
+	// 针对 DeepSeek V4 等默认开启思考链的模型，注入 thinking: {"type": "disabled"} 禁用思考链，
+	// 避免思考过程耗尽 256 max_tokens 导致正文截断为空。
+	if strings.HasPrefix(modelName, "deepseek-v4-") || strings.Contains(endpoint.BaseURL, "deepseek.com") {
+		payload["thinking"] = map[string]string{
+			"type": "disabled",
+		}
+		if strings.HasSuffix(modelName, "-none") {
+			payload["model"] = strings.TrimSuffix(modelName, "-none")
+		}
 	}
 
 	bodyBytes, err := common.Marshal(payload)

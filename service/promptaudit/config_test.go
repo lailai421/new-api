@@ -256,6 +256,7 @@ func TestConfigToPublicAndActive(t *testing.T) {
 	pub := cfg.ToPublic(encryptor)
 	assert.True(t, pub.Enabled)
 	assert.Equal(t, ModeBlocking, pub.EffectiveMode)
+	assert.Equal(t, HasStableCryptoSecret(), pub.HasStableCryptoSecret)
 	require.Len(t, pub.Endpoints, 3)
 
 	assert.True(t, pub.Endpoints[0].HasToken)

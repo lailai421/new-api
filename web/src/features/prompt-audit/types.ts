@@ -47,6 +47,7 @@ export interface PromptAuditPublicConfig {
   updated_at: number
   updated_by: number
   change_summary?: string
+  has_stable_crypto_secret?: boolean
 }
 
 export interface ScannerCatalogDefinition {

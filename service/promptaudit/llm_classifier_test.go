@@ -368,3 +368,59 @@ func TestDispatchScanner_Routing(t *testing.T) {
 	require.ErrorAs(t, err, &gErr)
 	assert.Equal(t, ErrorCodeUnsupportedProtocol, gErr.Code)
 }
+
+func TestLLMClassifier_DeepSeekV4ThinkingDisabled(t *testing.T) {
+	var capturedPayload map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = common.DecodeJson(r.Body, &capturedPayload)
+		respBody := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": `{"safety":"Safe","categories":[]}`,
+					},
+				},
+			},
+		}
+		respBytes, _ := common.Marshal(respBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(respBytes)
+	}))
+	defer server.Close()
+
+	scanner := NewLLMClassifierScanner()
+
+	// 1. deepseek-v4-flash 模型测试 -> 注入 thinking: disabled
+	ep1 := ActiveEndpoint{
+		ID:        "ep-v4-flash",
+		Protocol:  ProtocolLLMClassifier,
+		BaseURL:   server.URL,
+		Model:     "deepseek-v4-flash",
+		TimeoutMS: 5000,
+	}
+	res1, err := scanner.Scan(context.Background(), ep1, "测试输入", AllScannerIDs)
+	require.NoError(t, err)
+	assert.Equal(t, "Safe", res1.Safety)
+	assert.Equal(t, "deepseek-v4-flash", capturedPayload["model"])
+	thinking1, ok := capturedPayload["thinking"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "disabled", thinking1["type"])
+
+	// 2. deepseek-v4-flash-none 模型测试 -> 去除 -none 后缀并注入 thinking: disabled
+	ep2 := ActiveEndpoint{
+		ID:        "ep-v4-flash-none",
+		Protocol:  ProtocolLLMClassifier,
+		BaseURL:   server.URL,
+		Model:     "deepseek-v4-flash-none",
+		TimeoutMS: 5000,
+	}
+	res2, err := scanner.Scan(context.Background(), ep2, "测试输入", AllScannerIDs)
+	require.NoError(t, err)
+	assert.Equal(t, "Safe", res2.Safety)
+	assert.Equal(t, "deepseek-v4-flash", capturedPayload["model"])
+	thinking2, ok := capturedPayload["thinking"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "disabled", thinking2["type"])
+}
+

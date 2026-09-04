@@ -17,12 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
-import { CheckSquare, Square } from 'lucide-react'
+import { AlertTriangle, CheckSquare, Server, Square } from 'lucide-react'
 import { useMemo } from 'react'
 import type { UseFormReturn } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
 import { MultiSelect, type Option } from '@/components/multi-select'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -52,11 +53,22 @@ import type { ScannerCatalogDefinition } from '../types'
 interface PolicyTabProps {
   form: UseFormReturn<PromptAuditConfigFormValues>
   scannersCatalog?: ScannerCatalogDefinition[]
+  hasStableCryptoSecret?: boolean
+  onNavigateToEndpoints?: () => void
 }
 
-export function PolicyTab({ form, scannersCatalog = [] }: PolicyTabProps) {
+export function PolicyTab({
+  form,
+  scannersCatalog = [],
+  hasStableCryptoSecret,
+  onNavigateToEndpoints,
+}: PolicyTabProps) {
   const { t, i18n } = useTranslation()
   const isZh = i18n.language.startsWith('zh')
+
+  const endpoints = form.watch('endpoints') || []
+  const isAuditEnabled = form.watch('enabled')
+  const hasEnabledEndpoint = endpoints.some((ep) => ep.enabled)
 
   // 获取用户可选分组列表
   const { data: userGroupsData } = useQuery({
@@ -141,51 +153,101 @@ export function PolicyTab({ form, scannersCatalog = [] }: PolicyTabProps) {
               control={form.control}
               name='enabled'
               render={({ field }) => (
-                <FormItem className='flex flex-row items-center justify-between rounded-lg border p-4 shadow-2xs'>
-                  <div className='space-y-0.5 pr-4'>
-                    <FormLabel className='text-base'>
-                      {t('Enable Prompt Audit')}
-                    </FormLabel>
-                    <FormDescription>
-                      {t(
-                        'When enabled, user requests must pass synchronous audit before upstream dispatch. Requires at least one active endpoint.'
-                      )}
-                    </FormDescription>
+                <FormItem className='rounded-lg border p-4 shadow-2xs'>
+                  <div className='flex flex-row items-center justify-between'>
+                    <div className='space-y-0.5 pr-4'>
+                      <FormLabel className='text-base'>
+                        {t('Enable Prompt Audit')}
+                      </FormLabel>
+                      <FormDescription>
+                        {t(
+                          'When enabled, user requests must pass synchronous audit before upstream dispatch. Requires at least one active endpoint.'
+                        )}
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        aria-label={t('Enable Prompt Audit')}
+                      />
+                    </FormControl>
                   </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      aria-label={t('Enable Prompt Audit')}
-                    />
-                  </FormControl>
+                  <FormMessage className='mt-2' />
                 </FormItem>
               )}
             />
+
+            {/* 开启审计但无可用端点时的引导提示 */}
+            {isAuditEnabled && !hasEnabledEndpoint && (
+              <Alert variant='destructive'>
+                <AlertTriangle className='size-4' />
+                <AlertTitle>{t('Active Guard Endpoint Required')}</AlertTitle>
+                <AlertDescription className='mt-1 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
+                  <span className='text-xs leading-relaxed'>
+                    {t(
+                      'Prompt audit cannot be enabled without at least one active Guard endpoint. Please add and enable an endpoint in the Guard Endpoints tab.'
+                    )}
+                  </span>
+                  {onNavigateToEndpoints && (
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      onClick={onNavigateToEndpoints}
+                      className='gap-1.5 self-start whitespace-nowrap sm:self-auto'
+                    >
+                      <Server className='size-3.5' />
+                      <span>{t('Go to Guard Endpoints')}</span>
+                    </Button>
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* 开启审计但未配置持久化密钥时的引导提示 */}
+            {isAuditEnabled && hasStableCryptoSecret === false && (
+              <Alert variant='destructive'>
+                <AlertTriangle className='size-4' />
+                <AlertTitle>
+                  {t('Persistent Encryption Key Required')}
+                </AlertTitle>
+                <AlertDescription className='mt-1'>
+                  <span className='text-xs leading-relaxed'>
+                    {t(
+                      'Prompt audit requires a persistent CRYPTO_SECRET or SESSION_SECRET configured in your environment or .env before enabling. Otherwise, encrypted credentials and audit records cannot be decrypted after service restart.'
+                    )}
+                  </span>
+                </AlertDescription>
+              </Alert>
+            )}
 
             {/* 仅审计最新轮 */}
             <FormField
               control={form.control}
               name='latest_turn_only'
               render={({ field }) => (
-                <FormItem className='flex flex-row items-center justify-between rounded-lg border p-4 shadow-2xs'>
-                  <div className='space-y-0.5 pr-4'>
-                    <FormLabel className='text-base'>
-                      {t('Audit Latest Turn Only')}
-                    </FormLabel>
-                    <FormDescription>
-                      {t(
-                        'Only scan the latest user input segment. Full prompt text will still be stored completely for administrator review.'
-                      )}
-                    </FormDescription>
+                <FormItem className='rounded-lg border p-4 shadow-2xs'>
+                  <div className='flex flex-row items-center justify-between'>
+                    <div className='space-y-0.5 pr-4'>
+                      <FormLabel className='text-base'>
+                        {t('Audit Latest Turn Only')}
+                      </FormLabel>
+                      <FormDescription>
+                        {t(
+                          'Only scan the latest user input segment. Full prompt text will still be stored completely for administrator review.'
+                        )}
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        aria-label={t('Audit Latest Turn Only')}
+                      />
+                    </FormControl>
                   </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      aria-label={t('Audit Latest Turn Only')}
-                    />
-                  </FormControl>
+                  <FormMessage className='mt-2' />
                 </FormItem>
               )}
             />
@@ -195,24 +257,27 @@ export function PolicyTab({ form, scannersCatalog = [] }: PolicyTabProps) {
               control={form.control}
               name='store_pass_events'
               render={({ field }) => (
-                <FormItem className='flex flex-row items-center justify-between rounded-lg border p-4 shadow-2xs'>
-                  <div className='space-y-0.5 pr-4'>
-                    <FormLabel className='text-base'>
-                      {t('Store Passed Events')}
-                    </FormLabel>
-                    <FormDescription>
-                      {t(
-                        'Save Pass events to database. When disabled, only Block and Error events are recorded to conserve storage capacity.'
-                      )}
-                    </FormDescription>
+                <FormItem className='rounded-lg border p-4 shadow-2xs'>
+                  <div className='flex flex-row items-center justify-between'>
+                    <div className='space-y-0.5 pr-4'>
+                      <FormLabel className='text-base'>
+                        {t('Store Passed Events')}
+                      </FormLabel>
+                      <FormDescription>
+                        {t(
+                          'Save Pass events to database. When disabled, only Block and Error events are recorded to conserve storage capacity.'
+                        )}
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        aria-label={t('Store Passed Events')}
+                      />
+                    </FormControl>
                   </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      aria-label={t('Store Passed Events')}
-                    />
-                  </FormControl>
+                  <FormMessage className='mt-2' />
                 </FormItem>
               )}
             />
@@ -235,24 +300,27 @@ export function PolicyTab({ form, scannersCatalog = [] }: PolicyTabProps) {
               control={form.control}
               name='all_groups'
               render={({ field }) => (
-                <FormItem className='flex flex-row items-center justify-between rounded-lg border p-4 shadow-2xs'>
-                  <div className='space-y-0.5 pr-4'>
-                    <FormLabel className='text-base'>
-                      {t('Apply to All Groups')}
-                    </FormLabel>
-                    <FormDescription>
-                      {t(
-                        'When enabled, requests from all user groups will be audited. Turn off to limit auditing to specified groups.'
-                      )}
-                    </FormDescription>
+                <FormItem className='rounded-lg border p-4 shadow-2xs'>
+                  <div className='flex flex-row items-center justify-between'>
+                    <div className='space-y-0.5 pr-4'>
+                      <FormLabel className='text-base'>
+                        {t('Apply to All Groups')}
+                      </FormLabel>
+                      <FormDescription>
+                        {t(
+                          'When enabled, requests from all user groups will be audited. Turn off to limit auditing to specified groups.'
+                        )}
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        aria-label={t('Apply to All Groups')}
+                      />
+                    </FormControl>
                   </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      aria-label={t('Apply to All Groups')}
-                    />
-                  </FormControl>
+                  <FormMessage className='mt-2' />
                 </FormItem>
               )}
             />

@@ -45,6 +45,7 @@ export async function updatePromptAuditConfig(
 ): Promise<PromptAuditPublicConfig> {
   const res = await api.put('/api/prompt-audit/config', payload, {
     skipBusinessError: true,
+    skipErrorHandler: true,
   })
   return res.data?.data as PromptAuditPublicConfig
 }
@@ -59,6 +60,7 @@ export async function probePromptAuditEndpoint(
 ): Promise<PromptAuditProbeResponse> {
   const res = await api.post('/api/prompt-audit/endpoints/probe', payload, {
     skipBusinessError: true,
+    skipErrorHandler: true,
   })
   return res.data?.data as PromptAuditProbeResponse
 }

@@ -255,7 +255,8 @@ func extractOpenAIContent(body []byte) (string, error) {
 	var resp struct {
 		Choices []struct {
 			Message struct {
-				Content any `json:"content"`
+				Content          any    `json:"content"`
+				ReasoningContent string `json:"reasoning_content"`
 			} `json:"message"`
 		} `json:"choices"`
 	}
@@ -264,10 +265,14 @@ func extractOpenAIContent(body []byte) (string, error) {
 		return "", errors.New("invalid openai completion response envelope")
 	}
 
-	content := resp.Choices[0].Message.Content
+	choice := resp.Choices[0]
+	content := choice.Message.Content
 	switch v := content.(type) {
 	case string:
 		if strings.TrimSpace(v) == "" {
+			if strings.TrimSpace(choice.Message.ReasoningContent) != "" {
+				return "", errors.New("empty guard response content: model output reasoning_content instead of standard content, please disable thinking mode or use a non-reasoning model")
+			}
 			return "", errors.New("empty guard response content")
 		}
 		return v, nil
@@ -283,10 +288,16 @@ func extractOpenAIContent(body []byte) (string, error) {
 			}
 		}
 		if len(parts) == 0 {
+			if strings.TrimSpace(choice.Message.ReasoningContent) != "" {
+				return "", errors.New("empty guard response parts: model output reasoning_content instead of standard content, please disable thinking mode or use a non-reasoning model")
+			}
 			return "", errors.New("empty guard response parts")
 		}
 		return strings.Join(parts, "\n"), nil
 	default:
+		if strings.TrimSpace(choice.Message.ReasoningContent) != "" {
+			return "", errors.New("unexpected guard response content format: model output reasoning_content instead of standard content, please disable thinking mode or use a non-reasoning model")
+		}
 		return "", errors.New("unexpected guard response content format")
 	}
 }

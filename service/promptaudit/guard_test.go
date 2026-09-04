@@ -319,3 +319,30 @@ func TestGuardEvaluator_BulkheadSaturation(t *testing.T) {
 	assert.Equal(t, ErrorCodeUnavailable, gErr.Code)
 	assert.Equal(t, 503, gErr.HTTPStatus)
 }
+
+func TestExtractOpenAIContent_ReasoningDiagnostics(t *testing.T) {
+	// 1. 标准 content 成功
+	validBody := []byte(`{"choices":[{"message":{"content":"{\"safety\":\"Safe\",\"categories\":[]}"}}]}`)
+	content, err := extractOpenAIContent(validBody)
+	require.NoError(t, err)
+	assert.Equal(t, `{"safety":"Safe","categories":[]}`, content)
+
+	// 2. content 为空但有 reasoning_content -> 抛出包含 reasoning_content 说明的错误
+	reasoningBody := []byte(`{"choices":[{"message":{"content":"","reasoning_content":"thinking process here..."}}]}`)
+	_, err = extractOpenAIContent(reasoningBody)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "model output reasoning_content instead of standard content")
+
+	// 3. content 为 null 但有 reasoning_content -> 抛出包含 reasoning_content 说明的错误
+	nullContentBody := []byte(`{"choices":[{"message":{"content":null,"reasoning_content":"thinking process here..."}}]}`)
+	_, err = extractOpenAIContent(nullContentBody)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "model output reasoning_content instead of standard content")
+
+	// 4. content 纯空且无 reasoning_content -> 原始 empty guard response content
+	emptyBody := []byte(`{"choices":[{"message":{"content":""}}]}`)
+	_, err = extractOpenAIContent(emptyBody)
+	require.Error(t, err)
+	assert.Equal(t, "empty guard response content", err.Error())
+}
+

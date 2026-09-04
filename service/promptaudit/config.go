@@ -268,7 +268,8 @@ func (c *Config) ToPublic(encryptor Encryptor) PublicConfig {
 		ConfigVersion:   c.ConfigVersion,
 		UpdatedAt:       c.UpdatedAt,
 		UpdatedBy:       c.UpdatedBy,
-		ChangeSummary:   c.ChangeSummary,
+		ChangeSummary:         c.ChangeSummary,
+		HasStableCryptoSecret: HasStableCryptoSecret(),
 	}
 }
 

@@ -27,8 +27,8 @@ import {
   Server,
   Shield,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useCallback, useEffect, useState } from 'react'
+import { type FieldErrors, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -51,7 +51,10 @@ import {
   promptAuditConfigFormSchema,
   type PromptAuditConfigFormValues,
 } from './lib/schema'
-import type { PromptAuditConfigUpdateRequest } from './types'
+import type {
+  PromptAuditConfigUpdateRequest,
+  PromptAuditPublicConfig,
+} from './types'
 
 export function PromptAuditPage() {
   const { t } = useTranslation()
@@ -73,10 +76,9 @@ export function PromptAuditPage() {
     defaultValues: createDefaultConfigFormValues(),
   })
 
-  // 当远端配置加载成功后，重置本地表单
-  useEffect(() => {
-    if (configData?.config) {
-      const c = configData.config
+  // 封装统一的表单重置逻辑
+  const resetFormWithConfig = useCallback(
+    (c: PromptAuditPublicConfig) => {
       form.reset({
         enabled: c.enabled,
         latest_turn_only: c.latest_turn_only,
@@ -102,8 +104,92 @@ export function PromptAuditPage() {
         })),
         expected_config_version: c.config_version,
       })
+    },
+    [form]
+  )
+
+  // 当远端配置加载成功后，重置本地表单
+  useEffect(() => {
+    if (configData?.config) {
+      resetFormWithConfig(configData.config)
     }
-  }, [configData, form])
+  }, [configData?.config, resetFormWithConfig])
+
+  // 重新加载配置并强制同步回显到表单
+  const handleReload = async () => {
+    try {
+      const res = await refetchConfig()
+      if (res.data?.config) {
+        resetFormWithConfig(res.data.config)
+        toast.success(t('Prompt audit configuration reloaded'))
+      } else {
+        toast.error(t('Failed to reload configuration'))
+      }
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof Error ? err.message : t('Failed to reload configuration')
+      )
+    }
+  }
+
+  // 表单校验失败时的兜底提示与页面路由
+  const onInvalidConfig = (
+    errors: FieldErrors<PromptAuditConfigFormValues>
+  ) => {
+    let firstErrorMsg = ''
+
+    if (errors.enabled?.message) {
+      firstErrorMsg = String(errors.enabled.message)
+    } else if (errors.groups?.message) {
+      firstErrorMsg = String(errors.groups.message)
+    } else if (errors.scanners?.message) {
+      firstErrorMsg = String(errors.scanners.message)
+    } else if (errors.retention_days?.message) {
+      firstErrorMsg = String(errors.retention_days.message)
+    } else if (errors.endpoints) {
+      if (typeof errors.endpoints.message === 'string') {
+        firstErrorMsg = errors.endpoints.message
+      } else if (Array.isArray(errors.endpoints)) {
+        for (let i = 0; i < errors.endpoints.length; i++) {
+          const epErr = errors.endpoints[i]
+          if (epErr) {
+            const firstField = Object.values(epErr)[0] as
+              | { message?: string }
+              | undefined
+            if (firstField?.message) {
+              firstErrorMsg = `[${t('Endpoint')} ${i + 1}] ${firstField.message}`
+              break
+            }
+          }
+        }
+      }
+    }
+
+    if (!firstErrorMsg && errors.root?.message) {
+      firstErrorMsg = String(errors.root.message)
+    }
+
+    const displayMsg = firstErrorMsg
+      ? t(firstErrorMsg)
+      : t('Please check form fields for errors')
+
+    toast.error(displayMsg)
+
+    // 自动切换到包含错误项的选项卡
+    const hasPolicyErrors = Boolean(
+      errors.enabled ||
+      errors.groups ||
+      errors.scanners ||
+      errors.retention_days
+    )
+    const hasEndpointErrors = Boolean(errors.endpoints)
+
+    if (hasEndpointErrors && !hasPolicyErrors) {
+      setActiveTab(PROMPT_AUDIT_TABS.ENDPOINTS)
+    } else if (hasPolicyErrors) {
+      setActiveTab(PROMPT_AUDIT_TABS.POLICY)
+    }
+  }
 
   const onSaveConfig = async (values: PromptAuditConfigFormValues) => {
     const payload: PromptAuditConfigUpdateRequest = {
@@ -135,31 +221,7 @@ export function PromptAuditPage() {
       toast.success(t('Prompt audit configuration saved successfully'))
 
       // 成功后重置表单为服务端返回的最新状态，清空明文 Token
-      form.reset({
-        enabled: updated.enabled,
-        latest_turn_only: updated.latest_turn_only,
-        store_pass_events: updated.store_pass_events,
-        all_groups: updated.all_groups,
-        groups: updated.groups || [],
-        scanners: updated.scanners || [],
-        retention_days: updated.retention_days ?? 0,
-        strategy: 'priority',
-        endpoints: (updated.endpoints || []).map((ep) => ({
-          id: ep.id,
-          name: ep.name,
-          protocol: ep.protocol,
-          base_url: ep.base_url,
-          model: ep.model,
-          timeout_ms: ep.timeout_ms,
-          input_limit: ep.input_limit,
-          enabled: ep.enabled,
-          has_token: ep.has_token,
-          token_status: ep.token_status,
-          token: '',
-          delete_token: false,
-        })),
-        expected_config_version: updated.config_version,
-      })
+      resetFormWithConfig(updated)
     } catch (err: unknown) {
       if (isAxiosError(err)) {
         const resData = err.response?.data as
@@ -177,9 +239,25 @@ export function PromptAuditPage() {
             )
           )
           // 冲突时立即重新拉取远端配置重置本地表单
-          await refetchConfig()
+          const res = await refetchConfig()
+          if (res.data?.config) {
+            resetFormWithConfig(res.data.config)
+          }
           return
         }
+
+        if (
+          code === 'prompt_audit_encryption_key_required' ||
+          resData?.message?.includes('prompt_audit_encryption_key_required')
+        ) {
+          toast.error(
+            t(
+              'Persistent CRYPTO_SECRET or SESSION_SECRET must be configured in your environment or .env before enabling prompt audit.'
+            )
+          )
+          return
+        }
+
         toast.error(
           resData?.message || err.message || t('Failed to save configuration')
         )
@@ -218,9 +296,23 @@ export function PromptAuditPage() {
       )
     }
     return (
-      <PolicyTab form={form} scannersCatalog={configData?.scanners || []} />
+      <PolicyTab
+        form={form}
+        scannersCatalog={configData?.scanners || []}
+        hasStableCryptoSecret={configData?.config?.has_stable_crypto_secret}
+        onNavigateToEndpoints={() => setActiveTab(PROMPT_AUDIT_TABS.ENDPOINTS)}
+      />
     )
   }
+
+  const formErrors = form.formState.errors
+  const hasPolicyError = Boolean(
+    formErrors.enabled ||
+    formErrors.groups ||
+    formErrors.scanners ||
+    formErrors.retention_days
+  )
+  const hasEndpointsError = Boolean(formErrors.endpoints)
 
   return (
     <div className='w-full space-y-6'>
@@ -246,6 +338,9 @@ export function PromptAuditPage() {
               >
                 <Shield className='size-3.5' />
                 <span>{t('Policy & Scanners')}</span>
+                {hasPolicyError && (
+                  <span className='bg-destructive ml-0.5 size-1.5 rounded-full' />
+                )}
               </TabsTrigger>
               <TabsTrigger
                 value={PROMPT_AUDIT_TABS.ENDPOINTS}
@@ -253,6 +348,9 @@ export function PromptAuditPage() {
               >
                 <Server className='size-3.5' />
                 <span>{t('Guard Endpoints')}</span>
+                {hasEndpointsError && (
+                  <span className='bg-destructive ml-0.5 size-1.5 rounded-full' />
+                )}
               </TabsTrigger>
               <TabsTrigger
                 value={PROMPT_AUDIT_TABS.EVENTS}
@@ -271,7 +369,7 @@ export function PromptAuditPage() {
                 type='button'
                 variant='outline'
                 size='sm'
-                onClick={() => refetchConfig()}
+                onClick={handleReload}
                 disabled={isConfigFetching || updateMutation.isPending}
                 className='gap-1.5'
               >
@@ -285,7 +383,7 @@ export function PromptAuditPage() {
               <Button
                 type='button'
                 size='sm'
-                onClick={form.handleSubmit(onSaveConfig)}
+                onClick={form.handleSubmit(onSaveConfig, onInvalidConfig)}
                 disabled={updateMutation.isPending || isConfigLoading}
                 className='gap-1.5'
               >

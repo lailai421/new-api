@@ -235,7 +235,8 @@ type PublicConfig struct {
 	ConfigVersion   int64            `json:"config_version"`
 	UpdatedAt       int64            `json:"updated_at"`
 	UpdatedBy       int              `json:"updated_by"`
-	ChangeSummary   string           `json:"change_summary"`
+	ChangeSummary         string           `json:"change_summary"`
+	HasStableCryptoSecret bool             `json:"has_stable_crypto_secret"`
 }
 
 // ScannerDefinition 描述分类元信息。

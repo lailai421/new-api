@@ -534,7 +534,7 @@ export function EndpointsTab({ form }: EndpointsTabProps) {
                           <ul className='list-disc space-y-0.5 pl-4'>
                             <li>
                               {t(
-                                'Must be a standard OpenAI-compatible chat model (e.g. deepseek-chat); reasoning/thinking models are not supported.'
+                                'Must be a standard OpenAI-compatible chat model (e.g. deepseek-v4-flash); reasoning/thinking models are not supported.'
                               )}
                             </li>
                             <li>

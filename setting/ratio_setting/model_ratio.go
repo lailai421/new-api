@@ -237,9 +237,18 @@ var defaultModelRatio = map[string]float64{
 	"command-r-plus":         1.5,
 	"command-r-08-2024":      0.075,
 	"command-r-plus-08-2024": 1.25,
-	"deepseek-chat":          0.27 / 2,
-	"deepseek-coder":         0.27 / 2,
-	"deepseek-reasoner":      0.55 / 2, // 0.55 / 1k tokens
+	"deepseek-chat":                     0.27 / 2,
+	"deepseek-coder":                    0.27 / 2,
+	"deepseek-reasoner":                 0.55 / 2, // 0.55 / 1k tokens
+	"deepseek-v4-flash":                 0.44 / 2,
+	"deepseek-v4-flash-none":            0.44 / 2,
+	"deepseek-v4-flash-max":             0.44 / 2,
+	"deepseek-v4-pro":                   1.32 / 2,
+	"deepseek-v4-pro-none":              1.32 / 2,
+	"deepseek-v4-pro-max":               1.32 / 2,
+	"deepseek-v4-flash-vision-exp":      0.44 / 2,
+	"deepseek-v4-flash-vision-exp-none": 0.44 / 2,
+	"deepseek-v4-flash-vision-exp-max":  0.44 / 2,
 	// Perplexity online 模型对搜索额外收费，有需要应自行调整，此处不计入搜索费用
 	"llama-3-sonar-small-32k-chat":   0.2 / 1000 * USD,
 	"llama-3-sonar-small-32k-online": 0.2 / 1000 * USD,
@@ -328,6 +337,7 @@ var defaultCompletionRatio = map[string]float64{
 	"gpt-4o-gizmo-*": 3,
 	"gpt-4-all":      2,
 	"gpt-image-1":    8,
+	"deepseek-v4-*":  3,
 }
 
 // InitRatioSettings initializes all model related settings maps

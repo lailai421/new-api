@@ -169,10 +169,18 @@ func UpdatePromptAuditConfig(c *gin.Context) {
 
 	// 规范化与静态校验
 	if err := currentCfg.NormalizeAndValidate(promptaudit.HasStableCryptoSecret()); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
+		var guardErr *promptaudit.GuardError
+		resp := gin.H{
 			"success": false,
 			"message": "配置校验失败: " + err.Error(),
-		})
+		}
+		if errors.As(err, &guardErr) && guardErr.Code != "" {
+			resp["error"] = gin.H{
+				"code":    guardErr.Code,
+				"message": guardErr.Error(),
+			}
+		}
+		c.JSON(http.StatusBadRequest, resp)
 		return
 	}
 
