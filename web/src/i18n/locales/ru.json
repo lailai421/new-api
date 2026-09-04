@@ -746,6 +746,7 @@
     "Built-in: phone fingerprint/face, or Windows Hello; External: USB security key": "Встроенное: отпечаток пальца/лицо телефона или Windows Hello; Внешнее: USB-ключ безопасности",
     "by": "от",
     "By category": "По категориям",
+    "By default, all user prompts in the request are scanned and stored, excluding client instructions, system prompts, and tool results. Enabling this scans only the latest user turn, while all user prompts in the request are still stored for review.": "По умолчанию все подсказки пользователя в запросе сканируются и сохраняются, за исключением инструкций клиента, системных подсказок и результатов инструментов. Включение этой опции сканирует только последний ход пользователя, при этом все подсказки пользователя в запросе сохраняются для проверки.",
     "By model author": "По автору модели",
     "By quota": "По квоте",
     "By requests": "По запросам",

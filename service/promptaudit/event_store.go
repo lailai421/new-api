@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -48,6 +49,11 @@ func (s *GormEventStore) Record(
 		return nil
 	}
 
+	// 规则 5：Allow 或 Flag 且用户提示词为空（无用户输入），不得插入事件表（即使 StorePass 开启）
+	if decision != nil && (decision.Kind == DecisionAllow || decision.Kind == DecisionFlag) && strings.TrimSpace(snapshot.FullPrompt) == "" {
+		return nil
+	}
+
 	if s.encryptor == nil {
 		return &GuardError{
 			Code:       ErrorCodeRecordFailed,
@@ -56,7 +62,7 @@ func (s *GormEventStore) Record(
 		}
 	}
 
-	// 1. 完整提示词应用层加密
+	// 1. 完整用户提示词应用层加密（FullPrompt 仅包含用户文本）
 	ciphertext, err := s.encryptor.EncryptPrompt(snapshot.FullPrompt)
 	if err != nil {
 		return &GuardError{
@@ -120,6 +126,8 @@ func (s *GormEventStore) Record(
 					scannerEvidenceJSON = string(b)
 				}
 			}
+		} else if decision.LatencyMS > 0 {
+			latencyMS = int64(decision.LatencyMS)
 		}
 	}
 

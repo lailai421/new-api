@@ -86,59 +86,86 @@ func JoinSegments(segments []PromptSegment) string {
 	return strings.Join(texts, "\n\n")
 }
 
-// SelectLatestTurnSegments 提取最新用户轮次及其紧邻的上一轮 assistant 输出。
-// 若未找到用户输入，退回全部分段；若配置 latest_turn_only 为 true，此函数用于构造 ScanText。
-func SelectLatestTurnSegments(segments []PromptSegment) []string {
+// JoinUserSegments 提取并拼接所有用户角色的段落，保持原顺序，用双换行符分隔。
+// 非用户角色（system, developer, assistant, tool 等）不包含在内。若无用户输入返回空字符串。
+func JoinUserSegments(segments []PromptSegment) string {
+	normalized := NormalizeSegments(segments)
+	if len(normalized) == 0 {
+		return ""
+	}
+	var userTexts []string
+	for _, seg := range normalized {
+		if seg.IsUser() {
+			userTexts = append(userTexts, seg.Content)
+		}
+	}
+	if len(userTexts) == 0 {
+		return ""
+	}
+	return strings.Join(userTexts, "\n\n")
+}
+
+// SelectUserScanSegments 构造送审文本分段切片。
+// 仅包含用户角色分段，排除 system/assistant/tool/人设等非用户内容。
+// 找不到任何用户输入时返回 nil，绝不退回全文。
+// 当 latestTurnOnly 为 false 时：返回该请求全部用户分段，将最后一段用户输入置于切片首位作为优先扫描段，其余按原顺序排列；
+// 当 latestTurnOnly 为 true 时：仅提取最新一轮连续用户分段（合并为单个元素），不附带 assistant 输出历史。
+func SelectUserScanSegments(segments []PromptSegment, latestTurnOnly bool) []string {
 	normalized := NormalizeSegments(segments)
 	if len(normalized) == 0 {
 		return nil
 	}
 
-	latestUserStart := -1
-	for i := len(normalized) - 1; i >= 0; i-- {
-		if normalized[i].IsUser() {
-			latestUserStart = i
-			break
+	if latestTurnOnly {
+		latestUserEnd := -1
+		for i := len(normalized) - 1; i >= 0; i-- {
+			if normalized[i].IsUser() {
+				latestUserEnd = i
+				break
+			}
+		}
+		if latestUserEnd < 0 {
+			return nil
+		}
+
+		latestUserStart := latestUserEnd
+		for latestUserStart > 0 && normalized[latestUserStart-1].IsUser() {
+			latestUserStart--
+		}
+
+		currentUserTexts := make([]string, 0, latestUserEnd-latestUserStart+1)
+		for _, s := range normalized[latestUserStart : latestUserEnd+1] {
+			currentUserTexts = append(currentUserTexts, s.Content)
+		}
+		return []string{strings.Join(currentUserTexts, "\n\n")}
+	}
+
+	// latestTurnOnly == false：全部用户分段，最后一段置于首位
+	var userIndices []int
+	for i, seg := range normalized {
+		if seg.IsUser() {
+			userIndices = append(userIndices, i)
 		}
 	}
-
-	if latestUserStart < 0 {
-		return AllSegmentTextsPrioritized(normalized)
+	if len(userIndices) == 0 {
+		return nil
+	}
+	if len(userIndices) == 1 {
+		return []string{normalized[userIndices[0]].Content}
 	}
 
-	for latestUserStart > 0 && normalized[latestUserStart-1].IsUser() {
-		latestUserStart--
+	lastUserIdx := userIndices[len(userIndices)-1]
+	result := make([]string, 0, len(userIndices))
+	result = append(result, normalized[lastUserIdx].Content)
+	for _, idx := range userIndices[:len(userIndices)-1] {
+		result = append(result, normalized[idx].Content)
 	}
-	latestUserEnd := latestUserStart
-	for latestUserEnd < len(normalized) && normalized[latestUserEnd].IsUser() {
-		latestUserEnd++
-	}
+	return result
+}
 
-	currentUserTexts := make([]string, 0, latestUserEnd-latestUserStart)
-	for _, s := range normalized[latestUserStart:latestUserEnd] {
-		currentUserTexts = append(currentUserTexts, s.Content)
-	}
-	currentUserCombined := strings.Join(currentUserTexts, "\n\n")
-
-	var previousAssistantTexts []string
-	for i := latestUserStart - 1; i >= 0; i-- {
-		if !normalized[i].IsAssistant() {
-			continue
-		}
-		start := i
-		for start > 0 && normalized[start-1].IsAssistant() {
-			start--
-		}
-		for _, s := range normalized[start : i+1] {
-			previousAssistantTexts = append(previousAssistantTexts, s.Content)
-		}
-		break
-	}
-
-	if len(previousAssistantTexts) > 0 {
-		return []string{currentUserCombined, strings.Join(previousAssistantTexts, "\n\n")}
-	}
-	return []string{currentUserCombined}
+// SelectLatestTurnSegments 提取最新用户轮次分段。为兼容保留，若未找到用户输入返回 nil，不再退回全部分段。
+func SelectLatestTurnSegments(segments []PromptSegment) []string {
+	return SelectUserScanSegments(segments, true)
 }
 
 // AllSegmentTextsPrioritized 将最新用户段落置于首位，其余段落按原顺序排布，用于默认全局审计。
@@ -229,20 +256,20 @@ func BuildPromptSnapshot(
 		return PromptSnapshot{}, ErrNoPrompt
 	}
 
-	fullPrompt := JoinSegments(normalized)
-	if fullPrompt == "" {
-		return PromptSnapshot{}, ErrNoPrompt
-	}
+	fullPrompt := JoinUserSegments(normalized)
 
-	var scanText string
-	auditScope := "full"
+	auditScope := "user"
 	if latestTurnOnly {
 		auditScope = "latest_turn"
-		scanSegments := SelectLatestTurnSegments(normalized)
-		scanText = BuildScanText(scanSegments)
-	} else {
-		scanSegments := AllSegmentTextsPrioritized(normalized)
-		scanText = BuildScanText(scanSegments)
+	}
+	scanSegments := SelectUserScanSegments(normalized, latestTurnOnly)
+	scanText := BuildScanText(scanSegments)
+
+	userMessageCount := 0
+	for _, seg := range normalized {
+		if seg.IsUser() {
+			userMessageCount++
+		}
 	}
 
 	reqID := ""
@@ -346,9 +373,9 @@ func BuildPromptSnapshot(
 		FullPrompt:        fullPrompt,
 		ScanText:          scanText,
 		PromptHash:        CalculatePromptHash(fullPrompt),
-		RedactedPreview:   BuildPromptPreview(fullPrompt),
+		RedactedPreview:   BuildPromptPreview(scanText),
 		PromptLength:      utf8.RuneCountInString(fullPrompt),
-		MessageCount:      len(normalized),
+		MessageCount:      userMessageCount,
 		AuditScope:        auditScope,
 		ChannelID:         channelID,
 		ChannelType:       channelType,

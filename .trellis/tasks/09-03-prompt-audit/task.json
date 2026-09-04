@@ -28,7 +28,8 @@
     "09-03-prompt-audit-integration-check",
     "09-04-prompt-audit-llm-classifier",
     "09-04-prompt-audit-cyber-abuse",
-    "09-04-prompt-audit-user-scan"
+    "09-04-prompt-audit-user-scan",
+    "09-04-prompt-audit-exclude-agents-md"
   ],
   "parent": null,
   "relatedFiles": [],

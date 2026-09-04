@@ -746,6 +746,7 @@
     "Built-in: phone fingerprint/face, or Windows Hello; External: USB security key": "Built-in: phone fingerprint/face, or Windows Hello; External: USB security key",
     "by": "by",
     "By category": "By category",
+    "By default, all user prompts in the request are scanned and stored, excluding client instructions, system prompts, and tool results. Enabling this scans only the latest user turn, while all user prompts in the request are still stored for review.": "By default, all user prompts in the request are scanned and stored, excluding client instructions, system prompts, and tool results. Enabling this scans only the latest user turn, while all user prompts in the request are still stored for review.",
     "By model author": "By model author",
     "By quota": "By quota",
     "By requests": "By requests",

@@ -746,6 +746,7 @@
     "Built-in: phone fingerprint/face, or Windows Hello; External: USB security key": "Tích hợp sẵn: vân tay/khuôn mặt điện thoại, hoặc Windows Hello; Bên ngoài: khóa bảo mật USB",
     "by": "by",
     "By category": "Theo danh mục",
+    "By default, all user prompts in the request are scanned and stored, excluding client instructions, system prompts, and tool results. Enabling this scans only the latest user turn, while all user prompts in the request are still stored for review.": "Theo mặc định, tất cả lời nhắc của người dùng trong yêu cầu đều được quét và lưu trữ, loại trừ hướng dẫn ứng dụng khách, lời nhắc hệ thống và kết quả công cụ. Bật tính năng này chỉ quét lượt người dùng mới nhất, trong khi tất cả lời nhắc của người dùng trong yêu cầu vẫn được lưu trữ để xem xét.",
     "By model author": "Theo nhà phát triển mô hình",
     "By quota": "Theo hạn ngạch",
     "By requests": "Theo số yêu cầu",

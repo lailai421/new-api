@@ -248,7 +248,7 @@ export function PolicyTab({
                       </FormLabel>
                       <FormDescription>
                         {t(
-                          'Only scan the latest user input segment. Full prompt text will still be stored completely for administrator review.'
+                          'By default, all user prompts in the request are scanned and stored, excluding client instructions, system prompts, and tool results. Enabling this scans only the latest user turn, while all user prompts in the request are still stored for review.'
                         )}
                       </FormDescription>
                     </div>
@@ -460,7 +460,9 @@ export function PolicyTab({
           {hasCyberAbuseSelected && isOnlyOpenAICompatible && (
             <Alert className='border-warning/40 bg-warning/5 text-warning-foreground'>
               <AlertTriangle className='text-warning size-4' />
-              <AlertTitle>{t('Qwen3Guard Unreliable for Cyber Abuse')}</AlertTitle>
+              <AlertTitle>
+                {t('Qwen3Guard Unreliable for Cyber Abuse')}
+              </AlertTitle>
               <AlertDescription className='mt-1 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
                 <span className='text-muted-foreground text-xs leading-relaxed'>
                   {t(

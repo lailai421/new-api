@@ -2,12 +2,17 @@ package promptaudit
 
 import (
 	"bytes"
+	"container/list"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -302,6 +307,155 @@ func extractOpenAIContent(body []byte) (string, error) {
 	}
 }
 
+type decisionCacheEntry struct {
+	key       string
+	decision  *Decision
+	expiresAt time.Time
+}
+
+// DecisionCache 是提示词审计本地内存决策缓存（LRU + TTL），用于降低重复提示词的分类器成本并防止短时间重试穿透。
+type DecisionCache struct {
+	mu       sync.Mutex
+	capacity int
+	ttl      time.Duration
+	entries  map[string]*list.Element
+	lruList  *list.List
+	clock    func() time.Time
+}
+
+func NewDecisionCache(capacity int, ttl time.Duration) *DecisionCache {
+	if capacity <= 0 {
+		capacity = 4096
+	}
+	if ttl <= 0 {
+		ttl = 10 * time.Minute
+	}
+	return &DecisionCache{
+		capacity: capacity,
+		ttl:      ttl,
+		entries:  make(map[string]*list.Element),
+		lruList:  list.New(),
+		clock:    time.Now,
+	}
+}
+
+func (c *DecisionCache) Get(key string) (*Decision, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	elem, exists := c.entries[key]
+	if !exists {
+		return nil, false
+	}
+
+	entry := elem.Value.(*decisionCacheEntry)
+	now := c.clock()
+	if now.After(entry.expiresAt) {
+		c.lruList.Remove(elem)
+		delete(c.entries, key)
+		return nil, false
+	}
+
+	c.lruList.MoveToFront(elem)
+	return cloneDecision(entry.decision), true
+}
+
+func (c *DecisionCache) Put(key string, decision *Decision) {
+	if decision == nil {
+		return
+	}
+	// 仅缓存 Allow, Flag, Block，不缓存失败或不可用
+	if decision.Kind != DecisionAllow && decision.Kind != DecisionFlag && decision.Kind != DecisionBlock {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	now := c.clock()
+	if elem, exists := c.entries[key]; exists {
+		c.lruList.MoveToFront(elem)
+		elem.Value = &decisionCacheEntry{
+			key:       key,
+			decision:  cloneDecision(decision),
+			expiresAt: now.Add(c.ttl),
+		}
+		return
+	}
+
+	if c.lruList.Len() >= c.capacity {
+		back := c.lruList.Back()
+		if back != nil {
+			c.lruList.Remove(back)
+			oldEntry := back.Value.(*decisionCacheEntry)
+			delete(c.entries, oldEntry.key)
+		}
+	}
+
+	entry := &decisionCacheEntry{
+		key:       key,
+		decision:  cloneDecision(decision),
+		expiresAt: now.Add(c.ttl),
+	}
+	elem := c.lruList.PushFront(entry)
+	c.entries[key] = elem
+}
+
+func (c *DecisionCache) SetClock(clock func() time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if clock == nil {
+		c.clock = time.Now
+	} else {
+		c.clock = clock
+	}
+}
+
+func computeDecisionCacheKey(configVersion int64, scanners []string, remoteScan string) string {
+	sortedScanners := make([]string, len(scanners))
+	copy(sortedScanners, scanners)
+	sort.Strings(sortedScanners)
+	payload := strconv.FormatInt(configVersion, 10) + "\x1f" + strings.Join(sortedScanners, ",") + "\x1f" + remoteScan
+	sum := sha256.Sum256([]byte(payload))
+	return hex.EncodeToString(sum[:])
+}
+
+func cloneDecision(d *Decision) *Decision {
+	if d == nil {
+		return nil
+	}
+	cloned := *d
+	if d.Result != nil {
+		res := *d.Result
+		if d.Result.Categories != nil {
+			res.Categories = make([]string, len(d.Result.Categories))
+			copy(res.Categories, d.Result.Categories)
+		}
+		if d.Result.MatchedScanners != nil {
+			res.MatchedScanners = make([]string, len(d.Result.MatchedScanners))
+			copy(res.MatchedScanners, d.Result.MatchedScanners)
+		}
+		if d.Result.ScannerScores != nil {
+			res.ScannerScores = make(map[string]float64, len(d.Result.ScannerScores))
+			for k, v := range d.Result.ScannerScores {
+				res.ScannerScores[k] = v
+			}
+		}
+		if d.Result.ScannerEvidence != nil {
+			res.ScannerEvidence = make(map[string]string, len(d.Result.ScannerEvidence))
+			for k, v := range d.Result.ScannerEvidence {
+				res.ScannerEvidence[k] = v
+			}
+		}
+		if d.Result.UnknownCategories != nil {
+			res.UnknownCategories = make([]string, len(d.Result.UnknownCategories))
+			copy(res.UnknownCategories, d.Result.UnknownCategories)
+		}
+		cloned.Result = &res
+	}
+	return &cloned
+}
+
 // GuardEvaluator 实现提示词审计核心 Evaluator 接口，负责并发隔离、故障切换与判定聚合。
 type GuardEvaluator struct {
 	scanner      PromptScanner
@@ -309,6 +463,7 @@ type GuardEvaluator struct {
 	perNodeLimit int
 	nodeMu       sync.Mutex
 	nodes        map[string]chan struct{}
+	cache        *DecisionCache
 }
 
 func NewGuardEvaluator(scanner PromptScanner) *GuardEvaluator {
@@ -327,6 +482,13 @@ func NewGuardEvaluatorWithLimits(scanner PromptScanner, globalLimit, perNodeLimi
 		globalSem:    make(chan struct{}, globalLimit),
 		perNodeLimit: perNodeLimit,
 		nodes:        make(map[string]chan struct{}),
+		cache:        NewDecisionCache(4096, 10*time.Minute),
+	}
+}
+
+func (g *GuardEvaluator) SetCacheClock(clock func() time.Time) {
+	if g.cache != nil {
+		g.cache.SetClock(clock)
 	}
 }
 
@@ -382,7 +544,24 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 	}
 	LogGuardInfo(ctx, EventGuardStarted, baseFields)
 
-	// 本地高置信启发式前置检查（全文 ScanText，不分片）
+	// 1. 无用户输入（ScanText 为空）短路放行，不调用远程 Guard，不写事件
+	cleanScanText := strings.TrimSpace(strings.ReplaceAll(snapshot.ScanText, PrioritySeparator, ""))
+	if cleanScanText == "" {
+		latencyMS := int(time.Since(start).Milliseconds())
+		allowFields := copyLogFields(baseFields)
+		allowFields["status"] = "allowed"
+		allowFields["decision"] = DecisionAllow
+		allowFields["latency_ms"] = latencyMS
+		LogGuardInfo(ctx, EventGuardAllowed, allowFields)
+		return &Decision{
+			Kind:           DecisionAllow,
+			HTTPStatus:     200,
+			AllowNextStage: true,
+			LatencyMS:      latencyMS,
+		}, nil
+	}
+
+	// 2. 本地高置信启发式前置检查（未截断 ScanText，不分片）
 	// 仅在审计启用且 scanners 包含 cyber_abuse 时运行；命中直接判定 Unsafe Block 并跳过远程 Guard
 	if _, ok := cfg.ScannersMap["cyber_abuse"]; ok {
 		if ruleName, matched := MatchCyberAbuseHeuristics(snapshot.ScanText); matched {
@@ -408,6 +587,7 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 				ErrorCode:      ErrorCodeBlocked,
 				Result:         heuristicResult,
 				AllowNextStage: false,
+				LatencyMS:      heuristicResult.LatencyMS,
 			}
 			blockFields := copyLogFields(baseFields)
 			blockFields["status"] = "blocked"
@@ -423,17 +603,65 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 		}
 	}
 
+	// 3. 远程送审文本截断（从开头最多保留 MaxRemoteScanRunes 个 rune）
+	remoteScan := snapshot.ScanText
+	remoteRunes := []rune(remoteScan)
+	if len(remoteRunes) > MaxRemoteScanRunes {
+		remoteScan = string(remoteRunes[:MaxRemoteScanRunes])
+	}
+
+	// 4. 判定短缓存查找（在 globalSem 之前，仅限同一 config_version + 启用分类器组合）
+	cacheKey := computeDecisionCacheKey(cfg.ConfigVersion, cfg.Scanners, remoteScan)
+	if g.cache != nil {
+		if cached, hit := g.cache.Get(cacheKey); hit {
+			latencyMS := int(time.Since(start).Milliseconds())
+			cached.LatencyMS = latencyMS
+			if cached.Result != nil {
+				cached.Result.LatencyMS = latencyMS
+			}
+			if cached.Kind == DecisionBlock {
+				blockFields := copyLogFields(baseFields)
+				blockFields["status"] = "blocked"
+				blockFields["decision"] = cached.Kind
+				if cached.Result != nil {
+					blockFields["risk_level"] = cached.Result.RiskLevel
+					blockFields["action"] = cached.Result.Action
+					blockFields["guard_endpoint_id"] = cached.Result.GuardEndpointID
+					blockFields["chunk_total"] = cached.Result.ChunkTotal
+				}
+				blockFields["latency_ms"] = latencyMS
+				blockFields["error_code"] = ErrorCodeBlocked
+				LogGuardWarn(ctx, EventGuardBlocked, blockFields)
+			} else {
+				allowFields := copyLogFields(baseFields)
+				allowFields["status"] = "allowed"
+				allowFields["decision"] = cached.Kind
+				if cached.Result != nil {
+					allowFields["risk_level"] = cached.Result.RiskLevel
+					allowFields["action"] = cached.Result.Action
+					allowFields["guard_endpoint_id"] = cached.Result.GuardEndpointID
+					allowFields["chunk_total"] = cached.Result.ChunkTotal
+				}
+				allowFields["latency_ms"] = latencyMS
+				LogGuardInfo(ctx, EventGuardAllowed, allowFields)
+			}
+			return cached, nil
+		}
+	}
+
 	endpoints := cfg.EnabledEndpoints()
 	if len(endpoints) == 0 {
 		failFields := copyLogFields(baseFields)
 		failFields["status"] = "failed"
 		failFields["error_code"] = ErrorCodeUnavailable
-		failFields["latency_ms"] = time.Since(start).Milliseconds()
+		latencyMS := int(time.Since(start).Milliseconds())
+		failFields["latency_ms"] = latencyMS
 		LogGuardWarn(ctx, EventGuardFailed, failFields)
 		return nil, &GuardError{
 			Code:       ErrorCodeUnavailable,
 			HTTPStatus: 503,
 			Cause:      errors.New("no usable enabled guard endpoints"),
+			LatencyMS:  latencyMS,
 		}
 	}
 
@@ -445,12 +673,14 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 		failFields := copyLogFields(baseFields)
 		failFields["status"] = "failed"
 		failFields["error_code"] = ErrorCodeUnavailable
-		failFields["latency_ms"] = time.Since(start).Milliseconds()
+		latencyMS := int(time.Since(start).Milliseconds())
+		failFields["latency_ms"] = latencyMS
 		LogGuardWarn(ctx, EventGuardFailed, failFields)
 		return nil, &GuardError{
 			Code:       ErrorCodeUnavailable,
 			HTTPStatus: 503,
 			Cause:      errors.New("global guard bulkhead capacity full"),
+			LatencyMS:  latencyMS,
 		}
 	}
 
@@ -463,17 +693,19 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 	defer cancel()
 
 	inputLimit := minimumInputLimit(endpoints)
-	chunks := SplitRunes(snapshot.ScanText, inputLimit)
+	chunks := SplitRunes(remoteScan, inputLimit)
 	if len(chunks) == 0 {
+		latencyMS := int(time.Since(start).Milliseconds())
 		allowFields := copyLogFields(baseFields)
 		allowFields["status"] = "allowed"
 		allowFields["decision"] = DecisionAllow
-		allowFields["latency_ms"] = time.Since(start).Milliseconds()
+		allowFields["latency_ms"] = latencyMS
 		LogGuardInfo(ctx, EventGuardAllowed, allowFields)
 		return &Decision{
 			Kind:           DecisionAllow,
 			HTTPStatus:     200,
 			AllowNextStage: true,
+			LatencyMS:      latencyMS,
 		}, nil
 	}
 
@@ -486,12 +718,22 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 			if errors.As(err, &gErr) && gErr.Code != "" {
 				code = gErr.Code
 			}
+			latencyMS := int(time.Since(start).Milliseconds())
 			failFields := copyLogFields(baseFields)
 			failFields["status"] = "failed"
 			failFields["error_code"] = code
-			failFields["latency_ms"] = time.Since(start).Milliseconds()
+			failFields["latency_ms"] = latencyMS
 			LogGuardWarn(ctx, EventGuardFailed, failFields)
-			return nil, err
+			if gErr != nil {
+				gErr.LatencyMS = latencyMS
+				return nil, gErr
+			}
+			return nil, &GuardError{
+				Code:       code,
+				HTTPStatus: 503,
+				Cause:      err,
+				LatencyMS:  latencyMS,
+			}
 		}
 		res.ChunkTotal = len(chunks)
 		results = append(results, res)
@@ -504,15 +746,17 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 
 	aggregated, err := AggregateResults(results, time.Since(start))
 	if err != nil {
+		latencyMS := int(time.Since(start).Milliseconds())
 		failFields := copyLogFields(baseFields)
 		failFields["status"] = "failed"
 		failFields["error_code"] = ErrorCodeInvalidResponse
-		failFields["latency_ms"] = time.Since(start).Milliseconds()
+		failFields["latency_ms"] = latencyMS
 		LogGuardWarn(ctx, EventGuardFailed, failFields)
 		return nil, &GuardError{
 			Code:       ErrorCodeInvalidResponse,
 			HTTPStatus: 503,
 			Cause:      err,
+			LatencyMS:  latencyMS,
 		}
 	}
 	aggregated.ChunkTotal = len(chunks)
@@ -533,6 +777,7 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 		HTTPStatus:     httpStatus,
 		Result:         aggregated,
 		AllowNextStage: (kind == DecisionAllow || kind == DecisionFlag),
+		LatencyMS:      aggregated.LatencyMS,
 	}
 	if kind == DecisionBlock {
 		decision.ErrorCode = ErrorCodeBlocked
@@ -556,6 +801,11 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 		allowFields["chunk_total"] = aggregated.ChunkTotal
 		allowFields["latency_ms"] = aggregated.LatencyMS
 		LogGuardInfo(ctx, EventGuardAllowed, allowFields)
+	}
+
+	// 5. 写入判定短缓存（仅缓存 Allow / Flag / Block，不缓存失败）
+	if g.cache != nil {
+		g.cache.Put(cacheKey, decision)
 	}
 
 	return decision, nil

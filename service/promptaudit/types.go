@@ -68,6 +68,9 @@ const (
 	// 分段优先级分隔符（用于标记优先扫描片段）
 	PrioritySeparator = "\x1e"
 
+	// 远程送审最大 Unicode rune 上限（超出时从开头截断）
+	MaxRemoteScanRunes = 8000
+
 	// Option 存储键名
 	OptionKeyPromptAuditConfigSecret = "PromptAuditConfigSecret"
 )
@@ -94,7 +97,7 @@ type PromptSnapshot struct {
 	RedactedPreview   string `json:"redacted_preview"`
 	PromptLength      int    `json:"prompt_length"`
 	MessageCount      int    `json:"message_count"`
-	AuditScope        string `json:"audit_scope"` // "full" 或 "latest_turn"
+	AuditScope        string `json:"audit_scope"` // "user" 或 "latest_turn"
 	ChannelID         int    `json:"channel_id,omitempty"`
 	ChannelType       int    `json:"channel_type,omitempty"`
 }
@@ -132,6 +135,7 @@ type Decision struct {
 	ErrorCode      string            `json:"error_code,omitempty"`
 	Result         *NormalizedResult `json:"result,omitempty"`
 	AllowNextStage bool              `json:"allow_next_stage"`
+	LatencyMS      int               `json:"latency_ms,omitempty"`
 }
 
 // Endpoint 表示单个 Guard 节点的持久化/内部模型。
@@ -255,6 +259,7 @@ type GuardError struct {
 	Retryable  bool
 	Timeout    bool
 	Cause      error
+	LatencyMS  int
 }
 
 func (e *GuardError) Error() string {

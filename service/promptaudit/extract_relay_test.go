@@ -68,7 +68,7 @@ func TestExtractRelayRequest_GeneralOpenAI(t *testing.T) {
 	// 验证最新轮 ScanText 提取
 	latestTurn := SelectLatestTurnSegments(segments)
 	scanText := BuildScanText(latestTurn)
-	assert.Equal(t, "最新用户问题第一部分\n\n最新用户问题第二部分"+PrioritySeparator+"第一轮助手回复", scanText)
+	assert.Equal(t, "最新用户问题第一部分\n\n最新用户问题第二部分", scanText)
 
 	// 2. Completions Prompt
 	completionsReq := &dto.GeneralOpenAIRequest{
@@ -120,7 +120,7 @@ func TestExtractRelayRequest_Claude(t *testing.T) {
 	assert.NotContains(t, full, "BASE64IMAGE")
 
 	latestScan := BuildScanText(SelectLatestTurnSegments(segments))
-	assert.Equal(t, latestUserText+PrioritySeparator+assistantText, latestScan)
+	assert.Equal(t, latestUserText, latestScan)
 }
 
 func TestExtractRelayRequest_Gemini(t *testing.T) {
@@ -163,7 +163,7 @@ func TestExtractRelayRequest_Gemini(t *testing.T) {
 	assert.NotContains(t, full, "BINARYDATA")
 
 	latestScan := BuildScanText(SelectLatestTurnSegments(segments))
-	assert.Equal(t, "Gemini 最新输入"+PrioritySeparator+"Gemini 历史模型回答", latestScan)
+	assert.Equal(t, "Gemini 最新输入", latestScan)
 
 	// Gemini Embedding
 	embReq := &dto.GeminiEmbeddingRequest{
@@ -223,7 +223,7 @@ func TestExtractRelayRequest_ResponsesAndCompaction(t *testing.T) {
 	assert.Equal(t, "Responses 指令说明\n\n用户首轮问答\n\n模型先前生成回复\n\n最新 Responses 请求文本", full)
 
 	latestScan := BuildScanText(SelectLatestTurnSegments(segments))
-	assert.Equal(t, "最新 Responses 请求文本"+PrioritySeparator+"模型先前生成回复", latestScan)
+	assert.Equal(t, "最新 Responses 请求文本", latestScan)
 
 	// Compaction Request
 	compactReq := &dto.OpenAIResponsesCompactionRequest{

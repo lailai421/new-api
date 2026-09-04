@@ -18,10 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { AxiosError } from 'axios'
 import { toast } from 'sonner'
 import { describe, expect, it, vi } from 'vitest'
 
-import { AxiosError } from 'axios'
 import * as api from '../api'
 import { PromptAuditPage } from '../prompt-audit-page'
 
@@ -458,10 +458,7 @@ describe('PromptAuditPage integration', () => {
     // 2. 验证展示了 Qwen3Guard 对 Cyber Abuse 不可靠的警告
     await screen.findByText('Qwen3Guard Unreliable for Cyber Abuse')
     expect(
-      screen.getByText(
-        /Qwen3Guard cannot reliably detect Cyber Abuse risks/i
-      )
+      screen.getByText(/Qwen3Guard cannot reliably detect Cyber Abuse risks/i)
     ).toBeInTheDocument()
   })
 })
-

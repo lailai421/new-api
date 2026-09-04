@@ -126,13 +126,17 @@ func CheckRealtimeEvent(ctx context.Context, c *gin.Context, relayInfo *relaycom
 	decision, evalErr := evaluator.Evaluate(ctx, cfg, snapshot)
 	if evalErr != nil {
 		code := ErrorCodeUnavailable
+		latencyMS := 0
 		var gErr *GuardError
-		if errors.As(evalErr, &gErr) && gErr.Code != "" {
-			code = gErr.Code
+		if errors.As(evalErr, &gErr) {
+			if gErr.Code != "" {
+				code = gErr.Code
+			}
+			latencyMS = gErr.LatencyMS
 		}
 		store := GetEventStore()
 		if store != nil {
-			_ = store.Record(ctx, snapshot, &Decision{Kind: DecisionUnavailable, ErrorCode: code}, true)
+			_ = store.Record(ctx, snapshot, &Decision{Kind: DecisionUnavailable, ErrorCode: code, LatencyMS: latencyMS}, true)
 		}
 		return RealtimeAuditResult{
 			Allowed:    false,

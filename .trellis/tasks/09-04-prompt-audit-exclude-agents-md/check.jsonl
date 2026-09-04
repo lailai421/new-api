@@ -1,0 +1,8 @@
+{"file": ".trellis/tasks/09-04-prompt-audit-exclude-agents-md/prd.md", "reason": "对照验收标准"}
+{"file": ".trellis/tasks/09-04-prompt-audit-exclude-agents-md/design.md", "reason": "对照技术契约"}
+{"file": ".trellis/tasks/09-04-prompt-audit-exclude-agents-md/implement.md", "reason": "对照实施验证命令"}
+{"file": ".trellis/tasks/09-04-prompt-audit-exclude-agents-md/research/codex-agents-md-envelope.md", "reason": "对照 Codex 信封与思考链证据"}
+{"file": ".trellis/tasks/09-04-prompt-audit-user-scan/prd.md", "reason": "对照被修正的 user-scan 契约"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨层检查"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "代码复用检查"}
+{"file": "AGENTS.md", "reason": "项目全局规范检查"}

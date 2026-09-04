@@ -495,16 +495,116 @@ func extractResponsesInput(value any) []PromptSegment {
 					result = append(result, PromptSegment{Role: RoleUser, Content: text, User: true})
 				}
 			case map[string]any:
-				role := strings.ToLower(strings.TrimSpace(interfaceToString(entry["role"])))
-				if role == "" {
-					role = RoleUser
+				itemType := strings.ToLower(strings.TrimSpace(interfaceToString(entry["type"])))
+				switch itemType {
+				case "function_call", "reasoning":
+					// assistant 角色，不抽取 arguments / reasoning 正文
+					result = append(result, PromptSegment{
+						Role:    RoleAssistant,
+						Content: "",
+						User:    false,
+					})
+				case "function_call_output":
+					// tool 角色，不抽取 output 正文
+					result = append(result, PromptSegment{
+						Role:    RoleTool,
+						Content: "",
+						User:    false,
+					})
+				case "message", "":
+					role := strings.ToLower(strings.TrimSpace(interfaceToString(entry["role"])))
+					if role == "" {
+						role = RoleUser
+					}
+					texts := extractTextPartsFromRaw(entry["content"])
+					if len(texts) == 0 {
+						if t := strings.TrimSpace(interfaceToString(entry["text"])); t != "" {
+							texts = append(texts, t)
+						}
+					}
+					for _, text := range texts {
+						text = strings.TrimSpace(text)
+						if text != "" && !looksLikeMediaPayload(text) {
+							result = append(result, PromptSegment{
+								Role:    role,
+								Content: text,
+								User:    role == RoleUser,
+							})
+						}
+					}
+				default:
+					role := strings.ToLower(strings.TrimSpace(interfaceToString(entry["role"])))
+					if role != "" {
+						texts := extractTextPartsFromRaw(entry["content"])
+						if len(texts) == 0 {
+							if t := strings.TrimSpace(interfaceToString(entry["text"])); t != "" {
+								texts = append(texts, t)
+							}
+						}
+						for _, text := range texts {
+							text = strings.TrimSpace(text)
+							if text != "" && !looksLikeMediaPayload(text) {
+								result = append(result, PromptSegment{
+									Role:    role,
+									Content: text,
+									User:    role == RoleUser,
+								})
+							}
+						}
+					}
 				}
-				texts := extractTextPartsFromRaw(entry["content"])
+			}
+		}
+		return result
+
+	case map[string]any:
+		itemType := strings.ToLower(strings.TrimSpace(interfaceToString(typed["type"])))
+		switch itemType {
+		case "function_call", "reasoning":
+			return []PromptSegment{{
+				Role:    RoleAssistant,
+				Content: "",
+				User:    false,
+			}}
+		case "function_call_output":
+			return []PromptSegment{{
+				Role:    RoleTool,
+				Content: "",
+				User:    false,
+			}}
+		case "message", "":
+			role := strings.ToLower(strings.TrimSpace(interfaceToString(typed["role"])))
+			if role == "" {
+				role = RoleUser
+			}
+			texts := extractTextPartsFromRaw(typed["content"])
+			if len(texts) == 0 {
+				if t := strings.TrimSpace(interfaceToString(typed["text"])); t != "" {
+					texts = append(texts, t)
+				}
+			}
+			var result []PromptSegment
+			for _, text := range texts {
+				text = strings.TrimSpace(text)
+				if text != "" && !looksLikeMediaPayload(text) {
+					result = append(result, PromptSegment{
+						Role:    role,
+						Content: text,
+						User:    role == RoleUser,
+					})
+				}
+			}
+			return result
+		default:
+			role := strings.ToLower(strings.TrimSpace(interfaceToString(typed["role"])))
+			if role != "" {
+				texts := extractTextPartsFromRaw(typed["content"])
 				if len(texts) == 0 {
-					if t := strings.TrimSpace(interfaceToString(entry["text"])); t != "" {
+					if t := strings.TrimSpace(interfaceToString(typed["text"])); t != "" {
 						texts = append(texts, t)
 					}
 				}
+				var result []PromptSegment
 				for _, text := range texts {
 					text = strings.TrimSpace(text)
 					if text != "" && !looksLikeMediaPayload(text) {
@@ -515,33 +615,10 @@ func extractResponsesInput(value any) []PromptSegment {
 						})
 					}
 				}
+				return result
 			}
+			return nil
 		}
-		return result
-
-	case map[string]any:
-		role := strings.ToLower(strings.TrimSpace(interfaceToString(typed["role"])))
-		if role == "" {
-			role = RoleUser
-		}
-		texts := extractTextPartsFromRaw(typed["content"])
-		if len(texts) == 0 {
-			if t := strings.TrimSpace(interfaceToString(typed["text"])); t != "" {
-				texts = append(texts, t)
-			}
-		}
-		var result []PromptSegment
-		for _, text := range texts {
-			text = strings.TrimSpace(text)
-			if text != "" && !looksLikeMediaPayload(text) {
-				result = append(result, PromptSegment{
-					Role:    role,
-					Content: text,
-					User:    role == RoleUser,
-				})
-			}
-		}
-		return result
 
 	default:
 		return nil

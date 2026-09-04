@@ -64,13 +64,17 @@ func CheckRelayRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo, request
 	decision, evalErr := evaluator.Evaluate(ctx, cfg, snapshot)
 	if evalErr != nil {
 		code := ErrorCodeUnavailable
+		latencyMS := 0
 		var gErr *GuardError
-		if errors.As(evalErr, &gErr) && gErr.Code != "" {
-			code = gErr.Code
+		if errors.As(evalErr, &gErr) {
+			if gErr.Code != "" {
+				code = gErr.Code
+			}
+			latencyMS = gErr.LatencyMS
 		}
 		store := GetEventStore()
 		if store != nil {
-			_ = store.Record(ctx, snapshot, &Decision{Kind: DecisionUnavailable, ErrorCode: code}, true)
+			_ = store.Record(ctx, snapshot, &Decision{Kind: DecisionUnavailable, ErrorCode: code, LatencyMS: latencyMS}, true)
 		}
 		return toRelayError(code, http.StatusServiceUnavailable)
 	}
@@ -146,13 +150,17 @@ func CheckMidjourneyRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo) *t
 	decision, evalErr := evaluator.Evaluate(ctx, cfg, snapshot)
 	if evalErr != nil {
 		code := ErrorCodeUnavailable
+		latencyMS := 0
 		var gErr *GuardError
-		if errors.As(evalErr, &gErr) && gErr.Code != "" {
-			code = gErr.Code
+		if errors.As(evalErr, &gErr) {
+			if gErr.Code != "" {
+				code = gErr.Code
+			}
+			latencyMS = gErr.LatencyMS
 		}
 		store := GetEventStore()
 		if store != nil {
-			_ = store.Record(ctx, snapshot, &Decision{Kind: DecisionUnavailable, ErrorCode: code}, true)
+			_ = store.Record(ctx, snapshot, &Decision{Kind: DecisionUnavailable, ErrorCode: code, LatencyMS: latencyMS}, true)
 		}
 		return toMjError(code, http.StatusServiceUnavailable)
 	}
@@ -301,13 +309,17 @@ func CheckTaskRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo, auditMet
 	decision, evalErr := evaluator.Evaluate(ctx, cfg, snapshot)
 	if evalErr != nil {
 		code := ErrorCodeUnavailable
+		latencyMS := 0
 		var gErr *GuardError
-		if errors.As(evalErr, &gErr) && gErr.Code != "" {
-			code = gErr.Code
+		if errors.As(evalErr, &gErr) {
+			if gErr.Code != "" {
+				code = gErr.Code
+			}
+			latencyMS = gErr.LatencyMS
 		}
 		store := GetEventStore()
 		if store != nil {
-			_ = store.Record(ctx, snapshot, &Decision{Kind: DecisionUnavailable, ErrorCode: code}, true)
+			_ = store.Record(ctx, snapshot, &Decision{Kind: DecisionUnavailable, ErrorCode: code, LatencyMS: latencyMS}, true)
 		}
 		return toTaskError(code, http.StatusServiceUnavailable)
 	}
@@ -405,13 +417,17 @@ func CheckTaskPluginProtocolRequest(c *gin.Context, relayInfo *relaycommon.Relay
 	decision, evalErr := evaluator.Evaluate(ctx, cfg, snapshot)
 	if evalErr != nil {
 		code := ErrorCodeUnavailable
+		latencyMS := 0
 		var gErr *GuardError
-		if errors.As(evalErr, &gErr) && gErr.Code != "" {
-			code = gErr.Code
+		if errors.As(evalErr, &gErr) {
+			if gErr.Code != "" {
+				code = gErr.Code
+			}
+			latencyMS = gErr.LatencyMS
 		}
 		store := GetEventStore()
 		if store != nil {
-			_ = store.Record(ctx, snapshot, &Decision{Kind: DecisionUnavailable, ErrorCode: code}, true)
+			_ = store.Record(ctx, snapshot, &Decision{Kind: DecisionUnavailable, ErrorCode: code, LatencyMS: latencyMS}, true)
 		}
 		return toTaskError(code, http.StatusServiceUnavailable)
 	}
