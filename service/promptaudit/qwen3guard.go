@@ -154,6 +154,13 @@ func ParseQwen3Guard(content string, enabledScanners []string) (*NormalizedResul
 		return nil, &GuardError{Code: ErrorCodeInvalidResponse}
 	}
 
+	rawCategories := strings.Split(categoryLine, ",")
+	return ApplySafetyDecision(safety, rawCategories, enabledScanners), nil
+}
+
+// ApplySafetyDecision 根据标准化安全评级、分类清单以及启用的 Scanner 列表计算最终安全决策。
+// 该逻辑供 Qwen3Guard 与 LLM 分类器两路完全复用。
+func ApplySafetyDecision(safety string, rawCategories []string, enabledScanners []string) *NormalizedResult {
 	enabled := make(map[string]struct{}, len(enabledScanners))
 	for _, scanner := range enabledScanners {
 		enabled[NormalizeCategory(scanner)] = struct{}{}
@@ -162,7 +169,7 @@ func ParseQwen3Guard(content string, enabledScanners []string) (*NormalizedResul
 	known := make(map[string]struct{})
 	unknown := make(map[string]struct{})
 
-	for _, raw := range strings.Split(categoryLine, ",") {
+	for _, raw := range rawCategories {
 		raw = strings.TrimSpace(raw)
 		if raw == "" || strings.EqualFold(raw, "none") || strings.EqualFold(raw, "n/a") {
 			continue
@@ -192,7 +199,7 @@ func ParseQwen3Guard(content string, enabledScanners []string) (*NormalizedResul
 		UnknownCategories: unknownList,
 		ScannerScores:     make(map[string]float64),
 		ScannerEvidence:   make(map[string]string),
-		ScannerBackend:    "qwen3guard-openai",
+		ScannerBackend:    ScannerBackendQwen3Guard,
 		ScannerVersion:    "qwen3guard",
 		PolicyID:          StrategyPriority,
 		PolicyVersion:     1,
@@ -234,7 +241,7 @@ func ParseQwen3Guard(content string, enabledScanners []string) (*NormalizedResul
 		}
 	}
 
-	return result, nil
+	return result
 }
 
 func unknownCategoryID(value string) string {

@@ -22,12 +22,17 @@ import {
   DEFAULT_GUARD_MODEL,
   DEFAULT_GUARD_PROTOCOL,
   DEFAULT_INPUT_LIMIT,
+  DEFAULT_LLM_CLASSIFIER_BASE_URL,
+  DEFAULT_LLM_CLASSIFIER_MODEL,
+  DEFAULT_LLM_CLASSIFIER_TIMEOUT_MS,
   DEFAULT_SCANNER_IDS,
   DEFAULT_TIMEOUT_MS,
   MAX_INPUT_LIMIT,
   MAX_TIMEOUT_MS,
   MIN_INPUT_LIMIT,
   MIN_TIMEOUT_MS,
+  PROTOCOL_LLM_CLASSIFIER,
+  PROTOCOL_OPENAI_COMPATIBLE,
 } from '../constants'
 import type { PromptAuditTokenStatus } from '../types'
 
@@ -66,7 +71,7 @@ export const promptAuditEndpointFormSchema = z.object({
     .trim()
     .min(1, 'Endpoint name is required')
     .max(128, 'Endpoint name must be at most 128 characters'),
-  protocol: z.literal(DEFAULT_GUARD_PROTOCOL),
+  protocol: z.enum([PROTOCOL_OPENAI_COMPATIBLE, PROTOCOL_LLM_CLASSIFIER]),
   base_url: z
     .string()
     .trim()
@@ -167,6 +172,18 @@ export const promptAuditConfigFormSchema = z
         })
       }
     }
+
+    // 4. LLM 分类器节点必须指定模型名称
+    for (let i = 0; i < data.endpoints.length; i++) {
+      const ep = data.endpoints[i]
+      if (ep.protocol === PROTOCOL_LLM_CLASSIFIER && !ep.model.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Model name is required for LLM classifier',
+          path: ['endpoints', i, 'model'],
+        })
+      }
+    }
   })
 
 export type PromptAuditConfigFormValues = z.infer<
@@ -181,6 +198,21 @@ export function createDefaultEndpoint(): PromptAuditEndpointFormValues {
     base_url: 'http://localhost:8000',
     model: DEFAULT_GUARD_MODEL,
     timeout_ms: DEFAULT_TIMEOUT_MS,
+    input_limit: DEFAULT_INPUT_LIMIT,
+    enabled: true,
+    has_token: false,
+    token_status: 'missing',
+  }
+}
+
+export function createDefaultLLMClassifierEndpoint(): PromptAuditEndpointFormValues {
+  return {
+    id: `guard-${Date.now().toString(36)}`,
+    name: 'LLM Classifier Endpoint',
+    protocol: PROTOCOL_LLM_CLASSIFIER,
+    base_url: DEFAULT_LLM_CLASSIFIER_BASE_URL,
+    model: DEFAULT_LLM_CLASSIFIER_MODEL,
+    timeout_ms: DEFAULT_LLM_CLASSIFIER_TIMEOUT_MS,
     input_limit: DEFAULT_INPUT_LIMIT,
     enabled: true,
     has_token: false,

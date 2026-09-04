@@ -43,10 +43,27 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 
-import { TOKEN_STATUS_CONFIG } from '../constants'
+import {
+  DEFAULT_GUARD_MODEL,
+  DEFAULT_GUARD_PROTOCOL,
+  DEFAULT_LLM_CLASSIFIER_BASE_URL,
+  DEFAULT_LLM_CLASSIFIER_MODEL,
+  DEFAULT_LLM_CLASSIFIER_TIMEOUT_MS,
+  DEFAULT_TIMEOUT_MS,
+  PROTOCOL_LLM_CLASSIFIER,
+  PROTOCOL_OPENAI_COMPATIBLE,
+  TOKEN_STATUS_CONFIG,
+} from '../constants'
 import { useProbePromptAuditEndpoint } from '../hooks/use-prompt-audit-mutations'
 import {
   createDefaultEndpoint,
@@ -120,6 +137,65 @@ export function EndpointsTab({ form }: EndpointsTabProps) {
       toast.error(msg)
     } finally {
       setProbingIndex(null)
+    }
+  }
+
+  const handleProtocolChange = (index: number, newProto: string) => {
+    const currentEp = form.getValues(`endpoints.${index}`)
+    if (!currentEp) return
+    const oldProto = currentEp.protocol || DEFAULT_GUARD_PROTOCOL
+
+    if (newProto === oldProto) return
+
+    form.setValue(
+      `endpoints.${index}.protocol`,
+      newProto as
+        | typeof PROTOCOL_OPENAI_COMPATIBLE
+        | typeof PROTOCOL_LLM_CLASSIFIER,
+      { shouldDirty: true, shouldValidate: true }
+    )
+
+    if (newProto === PROTOCOL_LLM_CLASSIFIER) {
+      if (!currentEp.model || currentEp.model === DEFAULT_GUARD_MODEL) {
+        form.setValue(
+          `endpoints.${index}.model`,
+          DEFAULT_LLM_CLASSIFIER_MODEL,
+          { shouldDirty: true }
+        )
+      }
+      if (
+        !currentEp.base_url ||
+        currentEp.base_url === 'http://localhost:8000'
+      ) {
+        form.setValue(
+          `endpoints.${index}.base_url`,
+          DEFAULT_LLM_CLASSIFIER_BASE_URL,
+          { shouldDirty: true }
+        )
+      }
+      if (currentEp.timeout_ms === DEFAULT_TIMEOUT_MS) {
+        form.setValue(
+          `endpoints.${index}.timeout_ms`,
+          DEFAULT_LLM_CLASSIFIER_TIMEOUT_MS,
+          { shouldDirty: true }
+        )
+      }
+    } else if (newProto === PROTOCOL_OPENAI_COMPATIBLE) {
+      if (currentEp.model === DEFAULT_LLM_CLASSIFIER_MODEL) {
+        form.setValue(`endpoints.${index}.model`, DEFAULT_GUARD_MODEL, {
+          shouldDirty: true,
+        })
+      }
+      if (currentEp.base_url === DEFAULT_LLM_CLASSIFIER_BASE_URL) {
+        form.setValue(`endpoints.${index}.base_url`, 'http://localhost:8000', {
+          shouldDirty: true,
+        })
+      }
+      if (currentEp.timeout_ms === DEFAULT_LLM_CLASSIFIER_TIMEOUT_MS) {
+        form.setValue(`endpoints.${index}.timeout_ms`, DEFAULT_TIMEOUT_MS, {
+          shouldDirty: true,
+        })
+      }
     }
   }
 
@@ -308,7 +384,11 @@ export function EndpointsTab({ form }: EndpointsTabProps) {
                           <FormControl>
                             <Input
                               {...field}
-                              placeholder='http://localhost:8000'
+                              placeholder={
+                                epValues?.protocol === PROTOCOL_LLM_CLASSIFIER
+                                  ? DEFAULT_LLM_CLASSIFIER_BASE_URL
+                                  : 'http://localhost:8000'
+                              }
                               className='font-mono text-xs'
                             />
                           </FormControl>
@@ -329,7 +409,11 @@ export function EndpointsTab({ form }: EndpointsTabProps) {
                           <FormControl>
                             <Input
                               {...field}
-                              placeholder='sileader/qwen3guard:0.6b'
+                              placeholder={
+                                epValues?.protocol === PROTOCOL_LLM_CLASSIFIER
+                                  ? DEFAULT_LLM_CLASSIFIER_MODEL
+                                  : DEFAULT_GUARD_MODEL
+                              }
                               className='font-mono text-xs'
                             />
                           </FormControl>
@@ -351,10 +435,24 @@ export function EndpointsTab({ form }: EndpointsTabProps) {
                               min={100}
                               max={30000}
                               step={100}
-                              value={field.value ?? 3000}
+                              value={
+                                field.value ??
+                                (epValues?.protocol === PROTOCOL_LLM_CLASSIFIER
+                                  ? DEFAULT_LLM_CLASSIFIER_TIMEOUT_MS
+                                  : DEFAULT_TIMEOUT_MS)
+                              }
                               onChange={(e) => {
                                 const val = e.target.valueAsNumber
-                                field.onChange(Number.isNaN(val) ? 3000 : val)
+                                if (Number.isNaN(val)) {
+                                  const fallback =
+                                    epValues?.protocol ===
+                                    PROTOCOL_LLM_CLASSIFIER
+                                      ? DEFAULT_LLM_CLASSIFIER_TIMEOUT_MS
+                                      : DEFAULT_TIMEOUT_MS
+                                  field.onChange(fallback)
+                                } else {
+                                  field.onChange(val)
+                                }
                               }}
                               className='font-mono'
                             />
@@ -390,24 +488,75 @@ export function EndpointsTab({ form }: EndpointsTabProps) {
                       )}
                     />
 
-                    {/* 协议（只读） */}
+                    {/* 协议选择 */}
                     <FormField
                       control={form.control}
                       name={`endpoints.${index}.protocol`}
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>{t('Protocol')}</FormLabel>
-                          <FormControl>
-                            <Input
-                              {...field}
-                              disabled
-                              className='font-mono text-xs'
-                            />
-                          </FormControl>
+                          <Select
+                            value={field.value}
+                            onValueChange={(val) => {
+                              if (!val) return
+                              handleProtocolChange(index, val)
+                            }}
+                          >
+                            <FormControl>
+                              <SelectTrigger className='font-mono text-xs'>
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value={PROTOCOL_OPENAI_COMPATIBLE}>
+                                {t('Qwen3Guard (openai_compatible)')}
+                              </SelectItem>
+                              <SelectItem value={PROTOCOL_LLM_CLASSIFIER}>
+                                {t('LLM classifier (llm_classifier)')}
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
                         </FormItem>
                       )}
                     />
                   </div>
+
+                  {/* LLM 分类器提示说明 */}
+                  {epValues?.protocol === PROTOCOL_LLM_CLASSIFIER && (
+                    <div className='bg-muted/40 text-muted-foreground rounded-lg border border-dashed p-3 text-xs leading-relaxed'>
+                      <div className='flex items-start gap-2'>
+                        <AlertTriangle className='text-warning mt-0.5 size-4 shrink-0' />
+                        <div className='space-y-1'>
+                          <p className='text-foreground font-medium'>
+                            {t('LLM Classifier Protocol Notice')}
+                          </p>
+                          <ul className='list-disc space-y-0.5 pl-4'>
+                            <li>
+                              {t(
+                                'Must be a standard OpenAI-compatible chat model (e.g. deepseek-chat); reasoning/thinking models are not supported.'
+                              )}
+                            </li>
+                            <li>
+                              {t(
+                                'Do not point the Base URL to this gateway or its channels to prevent recursive loops.'
+                              )}
+                            </li>
+                            <li>
+                              {t(
+                                'Model output formatting errors will trigger 503 fail-closed protection.'
+                              )}
+                            </li>
+                            <li>
+                              {t(
+                                'API usage costs are billed directly to the upstream account of this node token and will not be deducted from user quotas.'
+                              )}
+                            </li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Write-only Token 区域 */}
                   <div className='bg-muted/20 rounded-lg border p-3'>

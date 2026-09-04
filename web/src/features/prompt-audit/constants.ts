@@ -28,6 +28,11 @@ export const ERROR_CODE_CONFIG_CONFLICT = 'prompt_audit_config_conflict'
 
 export const DEFAULT_GUARD_MODEL = 'sileader/qwen3guard:0.6b'
 export const DEFAULT_GUARD_PROTOCOL = 'openai_compatible'
+export const PROTOCOL_OPENAI_COMPATIBLE = 'openai_compatible'
+export const PROTOCOL_LLM_CLASSIFIER = 'llm_classifier'
+export const DEFAULT_LLM_CLASSIFIER_MODEL = 'deepseek-chat'
+export const DEFAULT_LLM_CLASSIFIER_BASE_URL = 'https://api.deepseek.com'
+export const DEFAULT_LLM_CLASSIFIER_TIMEOUT_MS = 8000
 export const DEFAULT_TIMEOUT_MS = 3000
 export const DEFAULT_INPUT_LIMIT = 4000
 export const MIN_TIMEOUT_MS = 100

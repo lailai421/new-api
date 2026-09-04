@@ -44,12 +44,18 @@ const (
 	ErrorCodeEncryptionKeyRequired = "prompt_audit_encryption_key_required"
 
 	// 节点协议与默认配置
-	ProtocolOpenAICompatible = "openai_compatible"
-	DefaultGuardModel        = "sileader/qwen3guard:0.6b"
-	StrategyPriority         = "priority"
+	ProtocolOpenAICompatible    = "openai_compatible"
+	ProtocolLLMClassifier       = "llm_classifier"
+	DefaultGuardModel           = "sileader/qwen3guard:0.6b"
+	StrategyPriority            = "priority"
+	ScannerBackendQwen3Guard    = "qwen3guard-openai"
+	ScannerBackendLLMClassifier = "llm-classifier-openai"
 
 	// 阈值与边界
 	DefaultTimeoutMS         = 3000
+	DefaultLLMTimeoutMS      = 8000
+	DefaultLLMMaxTokens      = 256
+	DefaultLLMSeed           = 42
 	MinTimeoutMS             = 100
 	MaxTimeoutMS             = 30000
 	DefaultInputLimit        = 4000

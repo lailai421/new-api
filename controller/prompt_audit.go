@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -286,9 +287,24 @@ func ProbePromptAuditEndpoint(c *gin.Context) {
 			})
 			return
 		}
+		proto := strings.TrimSpace(req.Protocol)
+		if proto == "" {
+			proto = promptaudit.ProtocolOpenAICompatible
+		}
+		if proto != promptaudit.ProtocolOpenAICompatible && proto != promptaudit.ProtocolLLMClassifier {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": "不支持的 Guard 节点协议: " + proto,
+			})
+			return
+		}
 		timeout := req.TimeoutMS
 		if timeout <= 0 {
-			timeout = promptaudit.DefaultTimeoutMS
+			if proto == promptaudit.ProtocolLLMClassifier {
+				timeout = promptaudit.DefaultLLMTimeoutMS
+			} else {
+				timeout = promptaudit.DefaultTimeoutMS
+			}
 		}
 		inputLimit := req.InputLimit
 		if inputLimit <= 0 {
@@ -296,16 +312,46 @@ func ProbePromptAuditEndpoint(c *gin.Context) {
 		}
 		targetEp = promptaudit.ActiveEndpoint{
 			ID:         "probe-ep",
-			Protocol:   promptaudit.ProtocolOpenAICompatible,
+			Protocol:   proto,
 			BaseURL:    req.BaseURL,
 			Model:      req.Model,
 			Token:      req.Token,
 			TimeoutMS:  timeout,
 			InputLimit: inputLimit,
 		}
+	} else {
+		// 允许行内草稿参数覆盖已保存配置
+		if req.Protocol != "" {
+			targetEp.Protocol = strings.TrimSpace(req.Protocol)
+		}
+		if req.BaseURL != "" {
+			targetEp.BaseURL = req.BaseURL
+		}
+		if req.Model != "" {
+			targetEp.Model = req.Model
+		}
+		if req.Token != "" {
+			targetEp.Token = req.Token
+		}
+		if req.TimeoutMS > 0 {
+			targetEp.TimeoutMS = req.TimeoutMS
+		}
+		if req.InputLimit > 0 {
+			targetEp.InputLimit = req.InputLimit
+		}
+		if targetEp.Protocol == "" {
+			targetEp.Protocol = promptaudit.ProtocolOpenAICompatible
+		}
+		if targetEp.Protocol != promptaudit.ProtocolOpenAICompatible && targetEp.Protocol != promptaudit.ProtocolLLMClassifier {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": "不支持的 Guard 节点协议: " + targetEp.Protocol,
+			})
+			return
+		}
 	}
 
-	scanner := promptaudit.NewOpenAICompatibleScanner()
+	scanner := promptaudit.NewDispatchScanner()
 	start := time.Now()
 	_, err := scanner.Scan(c.Request.Context(), targetEp, "探测连通性测试输入文本", []string{"jailbreak"})
 	latency := time.Since(start).Milliseconds()
@@ -325,6 +371,7 @@ func ProbePromptAuditEndpoint(c *gin.Context) {
 
 	recordManageAudit(c, "prompt_audit.endpoint_probe", map[string]any{
 		"endpoint_id": targetEp.ID,
+		"protocol":    targetEp.Protocol,
 		"success":     probeResp.Success,
 		"latency_ms":  latency,
 	})

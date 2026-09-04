@@ -155,18 +155,29 @@ func (c *Config) NormalizeAndValidate(hasStableSecret bool) error {
 		if ep.Protocol == "" {
 			ep.Protocol = ProtocolOpenAICompatible
 		}
-		if ep.Protocol != ProtocolOpenAICompatible {
+		if ep.Protocol != ProtocolOpenAICompatible && ep.Protocol != ProtocolLLMClassifier {
 			return fmt.Errorf("endpoint[%s] unsupported protocol: %s", ep.ID, ep.Protocol)
 		}
 
-		if strings.TrimSpace(ep.Model) == "" {
-			ep.Model = DefaultGuardModel
-		} else {
+		if ep.Protocol == ProtocolOpenAICompatible {
+			if strings.TrimSpace(ep.Model) == "" {
+				ep.Model = DefaultGuardModel
+			} else {
+				ep.Model = strings.TrimSpace(ep.Model)
+			}
+		} else if ep.Protocol == ProtocolLLMClassifier {
 			ep.Model = strings.TrimSpace(ep.Model)
+			if ep.Model == "" {
+				return fmt.Errorf("endpoint[%s] missing model for protocol %s", ep.ID, ep.Protocol)
+			}
 		}
 
 		if ep.TimeoutMS == 0 {
-			ep.TimeoutMS = DefaultTimeoutMS
+			if ep.Protocol == ProtocolLLMClassifier {
+				ep.TimeoutMS = DefaultLLMTimeoutMS
+			} else {
+				ep.TimeoutMS = DefaultTimeoutMS
+			}
 		} else if ep.TimeoutMS < MinTimeoutMS || ep.TimeoutMS > MaxTimeoutMS {
 			return fmt.Errorf("endpoint[%s] timeout_ms must be between %d and %d", ep.ID, MinTimeoutMS, MaxTimeoutMS)
 		}

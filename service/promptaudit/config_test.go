@@ -288,3 +288,90 @@ func TestConfigToPublicAndActive(t *testing.T) {
 	require.Len(t, enabledNodes, 1)
 	assert.Equal(t, "ep-configured", enabledNodes[0].ID)
 }
+
+func TestNormalizeAndValidate_Protocol(t *testing.T) {
+	// 1. 空协议归一为 openai_compatible，默认模型 DefaultGuardModel，默认超时 3000ms
+	cfg1 := DefaultConfig()
+	cfg1.Endpoints = []Endpoint{
+		{
+			ID:      "ep-empty-proto",
+			Name:    "Empty Proto",
+			BaseURL: "http://127.0.0.1:8000",
+		},
+	}
+	err := cfg1.NormalizeAndValidate(true)
+	require.NoError(t, err)
+	assert.Equal(t, ProtocolOpenAICompatible, cfg1.Endpoints[0].Protocol)
+	assert.Equal(t, DefaultGuardModel, cfg1.Endpoints[0].Model)
+	assert.Equal(t, DefaultTimeoutMS, cfg1.Endpoints[0].TimeoutMS)
+
+	// 2. 非法协议拒绝
+	cfg2 := DefaultConfig()
+	cfg2.Endpoints = []Endpoint{
+		{
+			ID:       "ep-bad-proto",
+			Name:     "Bad Proto",
+			BaseURL:  "http://127.0.0.1:8000",
+			Protocol: "unknown_proto",
+		},
+	}
+	err = cfg2.NormalizeAndValidate(true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported protocol: unknown_proto")
+
+	// 3. llm_classifier 协议：提供 model 时默认超时 8000ms
+	cfg3 := DefaultConfig()
+	cfg3.Endpoints = []Endpoint{
+		{
+			ID:       "ep-llm",
+			Name:     "LLM Classifier",
+			BaseURL:  "https://api.deepseek.com",
+			Protocol: ProtocolLLMClassifier,
+			Model:    "deepseek-chat",
+		},
+	}
+	err = cfg3.NormalizeAndValidate(true)
+	require.NoError(t, err)
+	assert.Equal(t, ProtocolLLMClassifier, cfg3.Endpoints[0].Protocol)
+	assert.Equal(t, "deepseek-chat", cfg3.Endpoints[0].Model)
+	assert.Equal(t, DefaultLLMTimeoutMS, cfg3.Endpoints[0].TimeoutMS)
+
+	// 4. llm_classifier 协议：空 model 必须报错，禁止回填 DefaultGuardModel
+	cfg4 := DefaultConfig()
+	cfg4.Endpoints = []Endpoint{
+		{
+			ID:       "ep-llm-no-model",
+			Name:     "LLM No Model",
+			BaseURL:  "https://api.deepseek.com",
+			Protocol: ProtocolLLMClassifier,
+			Model:    "   ",
+		},
+	}
+	err = cfg4.NormalizeAndValidate(true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing model for protocol llm_classifier")
+
+	// 5. 节点池中混合支持两种协议
+	cfg5 := DefaultConfig()
+	cfg5.Endpoints = []Endpoint{
+		{
+			ID:       "ep-qwen",
+			Name:     "Qwen Guard",
+			BaseURL:  "http://127.0.0.1:8000",
+			Protocol: ProtocolOpenAICompatible,
+		},
+		{
+			ID:       "ep-deepseek",
+			Name:     "DeepSeek LLM",
+			BaseURL:  "https://api.deepseek.com",
+			Protocol: ProtocolLLMClassifier,
+			Model:    "deepseek-chat",
+		},
+	}
+	err = cfg5.NormalizeAndValidate(true)
+	require.NoError(t, err)
+	assert.Equal(t, ProtocolOpenAICompatible, cfg5.Endpoints[0].Protocol)
+	assert.Equal(t, DefaultGuardModel, cfg5.Endpoints[0].Model)
+	assert.Equal(t, ProtocolLLMClassifier, cfg5.Endpoints[1].Protocol)
+	assert.Equal(t, "deepseek-chat", cfg5.Endpoints[1].Model)
+}

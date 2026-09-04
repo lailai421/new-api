@@ -33,7 +33,7 @@ func InitPromptAudit() error {
 
 	configStore := NewGormConfigStore()
 	eventStore := NewGormEventStore(encryptor)
-	scanner := NewOpenAICompatibleScanner()
+	scanner := NewDispatchScanner()
 	evaluator := NewGuardEvaluator(scanner)
 	manager := NewManager(configStore, encryptor)
 

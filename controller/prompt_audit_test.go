@@ -351,35 +351,85 @@ func TestPromptAuditController_EventsQueryDetailAndDelete(t *testing.T) {
 func TestPromptAuditController_ProbeEndpoint(t *testing.T) {
 	r := setupPromptAuditControllerWithAuth(t)
 
-	// Probe with empty request -> 400 Bad Request
+	// 1. Probe with empty request -> 400 Bad Request
 	req := httptest.NewRequest(http.MethodPost, "/api/prompt-audit/endpoints/probe", bytes.NewReader([]byte("{}")))
 	req.Header.Set("X-Test-Role", "root")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 
-	// Probe with mock server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// 2. Probe with unsupported protocol -> 400 Bad Request
+	badProtoReq := dto.PromptAuditProbeRequest{
+		BaseURL:  "http://127.0.0.1:8000",
+		Model:    "some-model",
+		Protocol: "unsupported_proto",
+	}
+	bodyBad, _ := common.Marshal(badProtoReq)
+	req = httptest.NewRequest(http.MethodPost, "/api/prompt-audit/endpoints/probe", bytes.NewReader(bodyBad))
+	req.Header.Set("X-Test-Role", "root")
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	// 3. Probe Qwen3Guard with mock server
+	qwenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Safe"}}],"usage":{"total_tokens":10}}`))
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Safety: Safe\nCategories: None"}}],"usage":{"total_tokens":10}}`))
 	}))
-	defer server.Close()
+	defer qwenServer.Close()
 
-	probeReq := dto.PromptAuditProbeRequest{
-		BaseURL: server.URL,
-		Model:   "Qwen/Qwen3-Guard-0.6B",
-		Token:   "probe-token-secret",
+	probeReqQwen := dto.PromptAuditProbeRequest{
+		Protocol: promptaudit.ProtocolOpenAICompatible,
+		BaseURL:  qwenServer.URL,
+		Model:    "Qwen/Qwen3-Guard-0.6B",
+		Token:    "probe-token-secret-qwen",
 	}
-	body, _ := common.Marshal(probeReq)
-	req = httptest.NewRequest(http.MethodPost, "/api/prompt-audit/endpoints/probe", bytes.NewReader(body))
+	bodyQwen, _ := common.Marshal(probeReqQwen)
+	req = httptest.NewRequest(http.MethodPost, "/api/prompt-audit/endpoints/probe", bytes.NewReader(bodyQwen))
 	req.Header.Set("X-Test-Role", "root")
 	rec = httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Contains(t, rec.Body.String(), `"success":true`)
+	assert.Contains(t, rec.Body.String(), `"message":"探测成功"`)
 	// Token must never be leaked in probe response!
-	assert.NotContains(t, rec.Body.String(), "probe-token-secret")
+	assert.NotContains(t, rec.Body.String(), "probe-token-secret-qwen")
+
+	// 4. Probe LLM Classifier with mock server
+	var capturedLLMHeaders http.Header
+	var capturedLLMBody map[string]any
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedLLMHeaders = r.Header
+		_ = common.DecodeJson(r.Body, &capturedLLMBody)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"safety\":\"Safe\",\"categories\":[]}"}}],"usage":{"total_tokens":15}}`))
+	}))
+	defer llmServer.Close()
+
+	probeReqLLM := dto.PromptAuditProbeRequest{
+		Protocol: promptaudit.ProtocolLLMClassifier,
+		BaseURL:  llmServer.URL,
+		Model:    "deepseek-chat",
+		Token:    "probe-token-secret-llm",
+	}
+	bodyLLM, _ := common.Marshal(probeReqLLM)
+	req = httptest.NewRequest(http.MethodPost, "/api/prompt-audit/endpoints/probe", bytes.NewReader(bodyLLM))
+	req.Header.Set("X-Test-Role", "root")
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `"message":"探测成功"`)
+	assert.NotContains(t, rec.Body.String(), "probe-token-secret-llm")
+
+	// 确认 LLM 请求中携带了固定分类提示词与带分隔符的 user 消息
+	assert.Equal(t, "Bearer probe-token-secret-llm", capturedLLMHeaders.Get("Authorization"))
+	msgs, ok := capturedLLMBody["messages"].([]any)
+	require.True(t, ok)
+	require.Len(t, msgs, 2)
+	sysMsg, _ := msgs[0].(map[string]any)
+	assert.Equal(t, "system", sysMsg["role"])
+	assert.Equal(t, promptaudit.LLMClassifierSystemPrompt, sysMsg["content"])
 }
 
 func TestPromptAuditController_OptionSecretIsolation(t *testing.T) {

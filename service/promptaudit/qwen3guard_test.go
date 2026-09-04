@@ -165,3 +165,30 @@ func TestParseQwen3Guard_StrictFormatting(t *testing.T) {
 		})
 	}
 }
+
+func TestApplySafetyDecision_Direct(t *testing.T) {
+	// Safe
+	resSafe := ApplySafetyDecision("Safe", []string{}, AllScannerIDs)
+	assert.Equal(t, "Safe", resSafe.Safety)
+	assert.Equal(t, EventPass, resSafe.Decision)
+	assert.Equal(t, ActionAllow, resSafe.Action)
+
+	// Controversial 普通
+	resContro := ApplySafetyDecision("Controversial", []string{"politically_sensitive_topics"}, AllScannerIDs)
+	assert.Equal(t, EventFlag, resContro.Decision)
+	assert.Equal(t, ActionWarn, resContro.Action)
+	assert.Equal(t, 0.5, resContro.ScannerScores["politically_sensitive_topics"])
+
+	// Controversial 升级
+	resElevated := ApplySafetyDecision("Controversial", []string{"jailbreak"}, AllScannerIDs)
+	assert.Equal(t, EventCritical, resElevated.Decision)
+	assert.Equal(t, ActionBlock, resElevated.Action)
+
+	// Unsafe 命中禁用分类 -> Flag / High / Warn
+	resDisabled := ApplySafetyDecision("Unsafe", []string{"violent"}, []string{"pii"})
+	assert.Equal(t, EventFlag, resDisabled.Decision)
+	assert.Equal(t, RiskHigh, resDisabled.RiskLevel)
+	assert.Equal(t, ActionWarn, resDisabled.Action)
+	assert.Empty(t, resDisabled.MatchedScanners)
+	assert.Equal(t, []string{"violent"}, resDisabled.Categories)
+}

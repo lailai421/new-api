@@ -161,4 +161,36 @@ describe('promptAuditConfigFormSchema', () => {
     ep.input_limit = 200000 // above 100000
     expect(promptAuditConfigFormSchema.safeParse(values).success).toBe(false)
   })
+
+  it('validates protocol and enforces model name for LLM classifier', () => {
+    const values = createDefaultConfigFormValues()
+    const ep = createDefaultEndpoint()
+    ;(ep as { protocol: string }).protocol = 'llm_classifier'
+    ep.model = 'deepseek-chat'
+    ep.base_url = 'https://api.deepseek.com'
+    ep.timeout_ms = 8000
+    values.endpoints = [ep]
+
+    // 1. 合法的 LLM 分类器
+    const parsedValid = promptAuditConfigFormSchema.safeParse(values)
+    expect(parsedValid.success).toBe(true)
+
+    // 2. LLM 分类器未提供模型名称 -> 校验失败
+    ep.model = '   '
+    const parsedNoModel = promptAuditConfigFormSchema.safeParse(values)
+    expect(parsedNoModel.success).toBe(false)
+    if (!parsedNoModel.success) {
+      expect(
+        parsedNoModel.error.issues.some((i) =>
+          i.message.includes('Model name is required for LLM classifier')
+        )
+      ).toBe(true)
+    }
+
+    // 3. 非法协议 -> 校验失败
+    ep.model = 'deepseek-chat'
+    ;(ep as { protocol: string }).protocol = 'unsupported_protocol'
+    const parsedBadProto = promptAuditConfigFormSchema.safeParse(values)
+    expect(parsedBadProto.success).toBe(false)
+  })
 })

@@ -135,7 +135,7 @@ go test ./service/promptaudit/ ./controller/ -count=1 -timeout 60s
 
 ## 开始前检查
 
-- [ ] 用户已审核并批准本方案终稿（含拟决议与固定提示词）。
-- [ ] 未将 Moderations、阿里云护栏、渠道选择器塞进范围。
-- [ ] 批准后才允许 `python3 ./.trellis/scripts/task.py start 09-04-prompt-audit-llm-classifier`。
-- [ ] 启动后先读 `trellis-before-dev`，再改代码。
+- [x] 用户已审核并批准本方案终稿（含拟决议与固定提示词）。
+- [x] 未将 Moderations、阿里云护栏、渠道选择器塞进范围。
+- [x] 批准后才允许 `python3 ./.trellis/scripts/task.py start 09-04-prompt-audit-llm-classifier`。
+- [x] 启动后先读 `trellis-before-dev`，再改代码。
