@@ -31,16 +31,16 @@
 
 ## Acceptance Criteria
 
-- [ ] AC1. `docker inspect new-api` 的镜像不再是未加本地标签的 `calciumion/new-api:latest` 作为运行来源；运行中的镜像由 `/srv/docker-migration/newapi/src` 对应的 `lailai421/new-api` 提交构建。
-- [ ] AC2. 公网 `https://wj-api.mobikechip.com` 与 `https://wj-api.mobikechip.cn` 的 `/api/status` 返回 `success=true`，且 version 含 `lailai421-` 与构建时的 git short SHA。
-- [ ] AC3. 切换后 Postgres 中 `users` / `tokens` / `channels` 行数与切换前快照一致；`newapi-postgres` 容器与 `newapi_pg_data` 未被重建。
-- [ ] AC4. 使用现有管理员账号可以登录后台；随机抽查至少 1 个现有令牌调用仍指向原渠道配置，而不是空配置。
-- [ ] AC5. 服务器上存在：`calciumion/new-api:pre-cutover-rc25` 镜像标签、带时间戳的 compose 备份、带时间戳的 `pg_dump`。
-- [ ] AC6. `/srv/docker-migration/newapi/docker-compose.yml` 的 `new-api` 服务使用 `build` 指向 `./src`，不再把官方 Docker Hub latest 当作更新来源。
-- [ ] AC7. `/srv/docker-migration/newapi` 中有可执行的更新说明或脚本：pull `lailai421/new-api` main → 写入 VERSION → build → `up -d --no-deps new-api`。
-- [ ] AC8. 提示词审计保持关闭（或等效于不拦截现有分组流量）；后台可以看到审计页面，但不会因为默认开启而阻断团队正在使用的请求。
-- [ ] AC9. 回滚步骤已写明；若切换失败，应用容器能回到 rc.25 并恢复 `/api/status`。
-- [ ] AC10. Trellis 任务文档、服务器操作备注和聊天回复中不出现密钥原文。
+- [x] AC1. `docker inspect new-api` 的镜像不再是未加本地标签的 `calciumion/new-api:latest` 作为运行来源；运行中的镜像由 `/srv/docker-migration/newapi/src` 对应的 `lailai421/new-api` 提交构建。
+- [x] AC2. 公网 `https://wj-api.mobikechip.cn` 的 `/api/status` 返回 `success=true`，且 version 含 `lailai421-` 与构建时的 git short SHA（`lailai421-6651c38`；`.com` 域名已确认废弃）。
+- [x] AC3. 切换后 Postgres 中 `users` / `tokens` / `channels` 行数与切换前快照一致；`newapi-postgres` 容器与 `newapi_pg_data` 未被重建。
+- [ ] AC4. 使用现有管理员账号可以登录后台；随机抽查至少 1 个现有令牌调用仍指向原渠道配置，而不是空配置（数据库配置与映射已确认完好，待管理员浏览器实际登录复核）。
+- [x] AC5. 服务器上存在：`calciumion/new-api:pre-cutover-rc25` 镜像标签、带时间戳的 compose 备份、带时间戳的 `pg_dump`。
+- [x] AC6. `/srv/docker-migration/newapi/docker-compose.yml` 的 `new-api` 服务使用 `build` 指向 `./src`，不再把官方 Docker Hub latest 当作更新来源。
+- [x] AC7. `/srv/docker-migration/newapi` 中有可执行的更新说明或脚本：pull `lailai421/new-api` main → 写入 VERSION → build → `up -d --no-deps new-api`。
+- [x] AC8. 提示词审计保持关闭（或等效于不拦截现有分组流量）；后台可以看到审计页面，但不会因为默认开启而阻断团队正在使用的请求。
+- [x] AC9. 回滚步骤已写明；若切换失败，应用容器能回到 rc.25 并恢复 `/api/status`。
+- [x] AC10. Trellis 任务文档、服务器操作备注和聊天回复中不出现密钥原文。
 
 ## Out of Scope
 

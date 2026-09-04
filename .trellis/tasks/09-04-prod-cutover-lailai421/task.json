@@ -3,7 +3,7 @@
   "name": "prod-cutover-lailai421",
   "title": "将生产 new-api 切换到 lailai421 仓库并保留用户数据",
   "description": "将 72.60.29.71 上正在使用的官方 calciumion/new-api:latest 切换为 GitHub lailai421/new-api 构建，保留 Postgres 用户数据，并固定后续更新源。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

@@ -402,6 +402,14 @@ docker run --name new-api -d --restart always \
 
 </details>
 
+### 🔄 服务更新
+
+生产服务器（本地构建模式）执行以下命令即可平滑拉取更新并重新构建应用：
+
+```bash
+cd /srv/docker-migration/newapi && ./update.sh
+```
+
 ### ⚠️ 多机部署注意事项
 
 > [!WARNING]
