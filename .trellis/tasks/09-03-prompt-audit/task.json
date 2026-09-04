@@ -30,7 +30,8 @@
     "09-04-prompt-audit-cyber-abuse",
     "09-04-prompt-audit-user-scan",
     "09-04-prompt-audit-exclude-agents-md",
-    "09-04-prompt-audit-user-prompt-dedupe"
+    "09-04-prompt-audit-user-prompt-dedupe",
+    "09-04-prompt-audit-codex-cli-only"
   ],
   "parent": null,
   "relatedFiles": [],

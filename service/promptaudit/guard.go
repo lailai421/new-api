@@ -314,7 +314,8 @@ type decisionCacheEntry struct {
 	expiresAt time.Time
 }
 
-// DecisionCache 是提示词审计本地内存决策缓存（LRU + TTL），用于降低重复提示词的分类器成本并防止短时间重试穿透。
+// DecisionCache 是提示词审计本地内存决策缓存（LRU + 滑动 TTL）。
+// 用于降低重复提示词的分类器成本；Get 命中会续期，空闲超过 TTL 才重新送审。
 type DecisionCache struct {
 	mu       sync.Mutex
 	capacity int
@@ -326,10 +327,10 @@ type DecisionCache struct {
 
 func NewDecisionCache(capacity int, ttl time.Duration) *DecisionCache {
 	if capacity <= 0 {
-		capacity = 4096
+		capacity = DefaultDecisionCacheCapacity
 	}
 	if ttl <= 0 {
-		ttl = 10 * time.Minute
+		ttl = DefaultDecisionCacheTTL
 	}
 	return &DecisionCache{
 		capacity: capacity,
@@ -358,6 +359,7 @@ func (c *DecisionCache) Get(key string) (*Decision, bool) {
 	}
 
 	c.lruList.MoveToFront(elem)
+	entry.expiresAt = now.Add(c.ttl)
 	return cloneDecision(entry.decision), true
 }
 
@@ -484,7 +486,7 @@ func NewGuardEvaluatorWithLimits(scanner PromptScanner, globalLimit, perNodeLimi
 		globalSem:    make(chan struct{}, globalLimit),
 		perNodeLimit: perNodeLimit,
 		nodes:        make(map[string]chan struct{}),
-		cache:        NewDecisionCache(4096, 10*time.Minute),
+		cache:        NewDecisionCache(DefaultDecisionCacheCapacity, DefaultDecisionCacheTTL),
 	}
 }
 

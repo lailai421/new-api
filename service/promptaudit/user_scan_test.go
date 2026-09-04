@@ -254,6 +254,14 @@ func TestUserScan_DecisionCache_Behavior(t *testing.T) {
 	assert.Equal(t, DecisionAllow, dec2.Kind)
 	assert.Equal(t, int32(1), atomic.LoadInt32(&guardCalls))
 
+	// 2b. 命中后续期：空闲 50 分钟仍命中，不发起新的 HTTP
+	simulatedTime = simulatedTime.Add(50 * time.Minute)
+	dec2b, err := evaluator.Evaluate(ctx, cfg, snapshot)
+	require.NoError(t, err)
+	assert.Equal(t, DecisionAllow, dec2b.Kind)
+	assert.True(t, dec2b.FromCache)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&guardCalls))
+
 	// 3. 配置版本变更：缓存失效，发起第 2 次 HTTP 调用
 	cfgV2 := cfg
 	cfgV2.ConfigVersion = 101
@@ -262,8 +270,8 @@ func TestUserScan_DecisionCache_Behavior(t *testing.T) {
 	assert.Equal(t, DecisionAllow, dec3.Kind)
 	assert.Equal(t, int32(2), atomic.LoadInt32(&guardCalls))
 
-	// 4. 自定义时钟前进 11 分钟（超过 10 分钟 TTL）：缓存失效，发起第 3 次 HTTP 调用（禁止 Sleep）
-	simulatedTime = simulatedTime.Add(11 * time.Minute)
+	// 4. 自定义时钟前进 61 分钟（超过 60 分钟空闲 TTL）：缓存失效，发起第 3 次 HTTP 调用（禁止 Sleep）
+	simulatedTime = simulatedTime.Add(61 * time.Minute)
 	dec4, err := evaluator.Evaluate(ctx, cfgV2, snapshot)
 	require.NoError(t, err)
 	assert.Equal(t, DecisionAllow, dec4.Kind)

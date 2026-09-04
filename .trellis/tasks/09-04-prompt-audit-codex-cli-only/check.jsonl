@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "最终检查跨入口覆盖和共享契约"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "核对客户端输入到协议错误响应、零送审和零上游的完整数据流"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "检查不存在重复 Originator 值、重复规范化或平行错误映射"}
+{"file": ".trellis/spec/backend/index.md", "reason": "后端质量检查入口"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "验证失败关闭、SkipRetry/LocalError、零泄漏和 55 秒测试上限"}
+{"file": ".trellis/tasks/09-04-prompt-audit-codex-cli-only/research/client-identification-and-gate-map.md", "reason": "逐项核对五类审计入口、Originator allowlist 和 Realtime Upgrade 前拦截"}
+

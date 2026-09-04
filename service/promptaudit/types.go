@@ -3,6 +3,7 @@ package promptaudit
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 const (
@@ -64,6 +65,10 @@ const (
 	MaxGuardResponseBytes    = 256 * 1024
 	DefaultGlobalConcurrency = 64
 	DefaultNodeConcurrency   = 16
+
+	// 判定缓存：命中后续期，空闲超过 TTL 才重新送审。
+	DefaultDecisionCacheCapacity = 4096
+	DefaultDecisionCacheTTL      = 60 * time.Minute
 
 	// 分段优先级分隔符（用于标记优先扫描片段）
 	PrioritySeparator = "\x1e"
@@ -227,19 +232,19 @@ func (c ActiveConfig) EnabledEndpoints() []ActiveEndpoint {
 
 // PublicConfig 是脱敏后的公开配置结构体，供管理 API 与前端读取。
 type PublicConfig struct {
-	Enabled         bool             `json:"enabled"`
-	EffectiveMode   Mode             `json:"effective_mode"`
-	LatestTurnOnly  bool             `json:"latest_turn_only"`
-	StorePassEvents bool             `json:"store_pass_events"`
-	AllGroups       bool             `json:"all_groups"`
-	Groups          []string         `json:"groups"`
-	Scanners        []string         `json:"scanners"`
-	RetentionDays   int              `json:"retention_days"`
-	Strategy        string           `json:"strategy"`
-	Endpoints       []PublicEndpoint `json:"endpoints"`
-	ConfigVersion   int64            `json:"config_version"`
-	UpdatedAt       int64            `json:"updated_at"`
-	UpdatedBy       int              `json:"updated_by"`
+	Enabled               bool             `json:"enabled"`
+	EffectiveMode         Mode             `json:"effective_mode"`
+	LatestTurnOnly        bool             `json:"latest_turn_only"`
+	StorePassEvents       bool             `json:"store_pass_events"`
+	AllGroups             bool             `json:"all_groups"`
+	Groups                []string         `json:"groups"`
+	Scanners              []string         `json:"scanners"`
+	RetentionDays         int              `json:"retention_days"`
+	Strategy              string           `json:"strategy"`
+	Endpoints             []PublicEndpoint `json:"endpoints"`
+	ConfigVersion         int64            `json:"config_version"`
+	UpdatedAt             int64            `json:"updated_at"`
+	UpdatedBy             int              `json:"updated_by"`
 	ChangeSummary         string           `json:"change_summary"`
 	HasStableCryptoSecret bool             `json:"has_stable_crypto_secret"`
 }

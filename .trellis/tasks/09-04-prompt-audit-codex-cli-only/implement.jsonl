@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "入口覆盖、跨层错误契约与复用检查总入口"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "客户端门禁必须在 HTTP、Realtime、Midjourney、Task、Task Plugin 间保持一致"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Originator 允许值、规范化和错误码必须单点维护，禁止各入口复制判断"}
+{"file": ".trellis/spec/backend/index.md", "reason": "后端规范索引与分层入口"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "提示词审计失败关闭、零上游、SkipRetry、Realtime 协议边界和测试不变量"}
+{"file": ".trellis/tasks/09-04-prompt-audit-codex-cli-only/research/client-identification-and-gate-map.md", "reason": "当前审计入口、Codex Originator 证据、信任边界和测试影响"}
+
