@@ -1,0 +1,2 @@
+{"file": ".trellis/tasks/09-04-prod-cutover-lailai421/research/production-inventory.md", "reason": "生产机部署路径、镜像、Postgres 数据卷、域名和计数，实施时必须按这份盘点操作"}
+{"file": ".trellis/tasks/09-04-prod-cutover-lailai421/research/cutover-strategy.md", "reason": "选定服务器本地 build、先构建后替换应用容器、以及禁止 down -v 的策略"}

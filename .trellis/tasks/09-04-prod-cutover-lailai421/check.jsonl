@@ -1,0 +1,2 @@
+{"file": ".trellis/tasks/09-04-prod-cutover-lailai421/research/production-inventory.md", "reason": "验收时对照切换前域名、端口、计数和 Postgres 数据卷是否仍是同一套"}
+{"file": ".trellis/tasks/09-04-prod-cutover-lailai421/research/cutover-strategy.md", "reason": "验收回滚材料、VERSION 标记和不再拉取官方 latest 的更新路径"}
