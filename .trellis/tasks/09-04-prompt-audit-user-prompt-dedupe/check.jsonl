@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "检查跨层一致性：送审、落库、预览、事件次数"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查过滤后文本是否在 snapshot、Evaluate、Record 三处一致"}
+{"file": ".trellis/spec/backend/index.md", "reason": "后端质量检查入口"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "审计测试必须保护真实契约，禁止假冒覆盖率测试"}
+{"file": ".trellis/tasks/09-04-prompt-audit-user-prompt-dedupe/research/codex-context-and-duplicate-scan.md", "reason": "对照本地证据验收：环境上下文消失、Guard 1 次、Allow 事件 1 条"}

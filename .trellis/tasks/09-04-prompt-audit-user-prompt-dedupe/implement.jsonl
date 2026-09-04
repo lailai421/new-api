@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "跨层数据流与复用检查：snapshot 过滤、Guard 缓存、gate 写事件必须走同一套真实用户文本"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "ScanText / FullPrompt / 事件 / 前端说明必须保持同一过滤契约"}
+{"file": ".trellis/spec/backend/index.md", "reason": "后端分层与质量入口"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "提示词审计门禁约定：按协议字段分发，不递归扫 JSON"}
+{"file": ".trellis/tasks/09-04-prompt-audit-user-prompt-dedupe/research/codex-context-and-duplicate-scan.md", "reason": "本地 6 条事件拆解与 Codex 标记 / 标题模板契约"}
+{"file": ".trellis/tasks/09-04-prompt-audit-exclude-agents-md/research/codex-agents-md-envelope.md", "reason": "AGENTS.md 剥离必须回归；本任务修正其标题生成 AC7"}
