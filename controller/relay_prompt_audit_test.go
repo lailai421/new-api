@@ -635,7 +635,90 @@ func TestRelay_Realtime_PromptAudit_CodexCLIRequired(t *testing.T) {
 	assert.NotContains(t, hijack.Body.String(), "CANARY_UA_REALTIME")
 }
 
+func TestRelay_Realtime_PromptAudit_CodexCLIRequired_GroupMismatch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	eval := &relayMockEvaluator{}
+	store := &relayMockEventStore{}
+	cleanup := promptaudit.SetGlobalForTestHelper(promptaudit.ActiveConfig{
+		Enabled:   true,
+		AllGroups: false,
+		GroupsMap: map[string]struct{}{"vip": {}},
+	}, false, eval, store)
+	defer cleanup()
+
+	hijack := &hijackCountingWriter{ResponseRecorder: httptest.NewRecorder()}
+	c, _ := gin.CreateTestContext(hijack)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/realtime", nil)
+	c.Request.Header.Set("Upgrade", "websocket")
+	c.Request.Header.Set("Connection", "Upgrade")
+	c.Request.Header.Set("Sec-WebSocket-Version", "13")
+	c.Request.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	c.Request.Header.Set("Sec-WebSocket-Protocol", "realtime")
+	c.Request.Header.Set("Originator", "curl")
+	common.SetContextKey(c, common.RequestIdKey, "req-rt-unscoped-default")
+	common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
+
+	cfg, gErr := promptaudit.CheckAuditClientAccess(c, nil)
+	require.Nil(t, gErr)
+	assert.True(t, cfg.Enabled)
+
+	Relay(c, relaytypes.RelayFormatOpenAIRealtime)
+	assert.NotContains(t, hijack.Body.String(), promptaudit.ErrorCodeCodexCLIRequired)
+	assert.NotContains(t, hijack.Body.String(), promptaudit.CodexCLIRequiredMessage)
+	assert.Equal(t, 0, eval.called)
+	assert.Len(t, store.recorded, 0)
+}
+
 func TestRelay_PromptAudit_CodexCLIRequired_GroupMismatch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	eval := &relayMockEvaluator{}
+	store := &relayMockEventStore{}
+	cleanup := promptaudit.SetGlobalForTestHelper(promptaudit.ActiveConfig{
+		Enabled:   true,
+		AllGroups: false,
+		GroupsMap: map[string]struct{}{"vip": {}},
+	}, false, eval, store)
+	defer cleanup()
+
+	bodyBytes, _ := common.Marshal(map[string]any{
+		"model": "gpt-4o",
+		"messages": []map[string]string{
+			{"role": "user", "content": "group mismatch canary"},
+		},
+	})
+
+	wGate := httptest.NewRecorder()
+	cGate, _ := gin.CreateTestContext(wGate)
+	cGate.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(bodyBytes))
+	cGate.Request.Header.Set("Content-Type", "application/json")
+	cGate.Request.Header.Set("Originator", "curl")
+	common.SetContextKey(cGate, constant.ContextKeyUsingGroup, "default")
+	req := &dto.GeneralOpenAIRequest{}
+	require.NoError(t, common.UnmarshalBodyReusable(cGate, req))
+	err := promptaudit.CheckRelayRequest(cGate, &relaycommon.RelayInfo{UsingGroup: "default"}, req)
+	assert.Nil(t, err, "unscoped default group must not be blocked by Codex CLI gate")
+	assert.Equal(t, 0, eval.called)
+	assert.Len(t, store.recorded, 0)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(bodyBytes))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Request.Header.Set("Originator", "curl")
+	common.SetContextKey(c, common.RequestIdKey, "req-group-mismatch-non-codex")
+	common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
+
+	Relay(c, relaytypes.RelayFormatOpenAI)
+	assert.NotContains(t, w.Body.String(), promptaudit.ErrorCodeCodexCLIRequired)
+	assert.NotContains(t, w.Body.String(), promptaudit.CodexCLIRequiredMessage)
+	assert.Equal(t, 0, eval.called)
+	assert.Len(t, store.recorded, 0)
+	assert.False(t, c.GetBool("preconsumed_quota_flag"))
+}
+
+func TestRelay_PromptAudit_CodexCLIRequired_MatchingGroup(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	eval := &relayMockEvaluator{}
@@ -652,13 +735,14 @@ func TestRelay_PromptAudit_CodexCLIRequired_GroupMismatch(t *testing.T) {
 	bodyBytes, _ := common.Marshal(map[string]any{
 		"model": "gpt-4o",
 		"messages": []map[string]string{
-			{"role": "user", "content": "group mismatch canary"},
+			{"role": "user", "content": "vip group canary"},
 		},
 	})
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(bodyBytes))
 	c.Request.Header.Set("Content-Type", "application/json")
-	common.SetContextKey(c, common.RequestIdKey, "req-group-mismatch-non-codex")
-	common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
+	c.Request.Header.Set("Originator", "curl")
+	common.SetContextKey(c, common.RequestIdKey, "req-group-match-non-codex")
+	common.SetContextKey(c, constant.ContextKeyUsingGroup, "vip")
 
 	Relay(c, relaytypes.RelayFormatOpenAI)
 

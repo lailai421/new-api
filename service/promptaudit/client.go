@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
 )
 
@@ -47,9 +48,10 @@ func IsCodexCLIRequest(r *http.Request) bool {
 	return ok
 }
 
-// CheckAuditClientAccess 在确认审计开启后检查 Codex CLI 客户端身份。
-// 顺序：Manager 缺失或审计关闭则放行；配置 degraded 优先于身份错误；非允许 Originator 返回 503。
-func CheckAuditClientAccess(c *gin.Context) (ActiveConfig, *GuardError) {
+// CheckAuditClientAccess 在确认审计开启且命中生效分组后检查 Codex CLI 客户端身份。
+// 顺序：Manager 缺失或审计关闭则放行；配置 degraded 优先于身份错误；
+// 未命中生效分组则放行（不施加 Codex CLI 限制）；命中分组且非允许 Originator 返回 503。
+func CheckAuditClientAccess(c *gin.Context, relayInfo *relaycommon.RelayInfo) (ActiveConfig, *GuardError) {
 	mgr := GetManager()
 	if mgr == nil {
 		return ActiveConfig{}, nil
@@ -64,6 +66,9 @@ func CheckAuditClientAccess(c *gin.Context) (ActiveConfig, *GuardError) {
 
 	cfg := mgr.Active()
 	if !cfg.Enabled {
+		return cfg, nil
+	}
+	if !cfg.MatchesGroup(extractGroup(c, relayInfo)) {
 		return cfg, nil
 	}
 

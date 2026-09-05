@@ -112,8 +112,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}()
 
 	if relayFormat == types.RelayFormatOpenAIRealtime {
-		// 审计开启后，非 Codex CLI 必须在 Upgrade 前返回普通 HTTP 503。
-		if _, gErr := promptaudit.CheckAuditClientAccess(c); gErr != nil {
+		// 审计开启且命中生效分组后，非 Codex CLI 必须在 Upgrade 前返回普通 HTTP 503。
+		// 未命中分组的请求不施加 Codex CLI 限制，保持原 Realtime 行为。
+		if _, gErr := promptaudit.CheckAuditClientAccess(c, nil); gErr != nil {
 			newAPIError = promptaudit.NewRelayAuditError(gErr.Code, gErr.HTTPStatus)
 			return
 		}

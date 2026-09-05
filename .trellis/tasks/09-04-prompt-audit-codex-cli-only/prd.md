@@ -2,7 +2,7 @@
 
 ## Goal
 
-当全局提示词审计开启时，只允许标准 Codex CLI 客户端进入受审计保护的生成与任务提交链路。其他客户端在送审、计费和业务上游调用之前直接收到 HTTP 503，避免非目标客户端占用 Guard 资源或继续访问模型上游。
+当提示词审计开启且请求命中生效分组时，只允许标准 Codex CLI 客户端进入受审计保护的生成与任务提交链路。其他客户端在送审、计费和业务上游调用之前直接收到 HTTP 503，避免非目标客户端占用 Guard 资源或继续访问模型上游。未命中生效分组的请求不施加该限制。
 
 ## Background
 
@@ -17,7 +17,7 @@
 - **R1 — 开关语义**：审计关闭或 Manager 未初始化时，不执行 Codex CLI 客户端限制，所有现有请求行为保持不变。
 - **R2 — 判定契约**：审计开启时，读取入站 HTTP `Originator`，Trim 后按 ASCII 大小写不敏感做**完整值**匹配。显式允许 `codex_cli_rs`、`codex-cli`、`codex-tui` 与 `codex_exec`；空值、未知值、仅包含允许值的前后缀字符串均不允许。VS Code / Desktop / Monitor 等非 CLI 第一方客户端不允许。
 - **R3 — 辅助头不授权**：`User-Agent`、`Session_id`、`Thread_id`、`X-Codex-*` 等头不得单独授予访问权限；它们不参与首版硬判定。
-- **R4 — 全局优先级**：客户端限制按全局审计开关生效，执行顺序早于审计分组匹配。审计开启后，非 Codex CLI 即使位于未纳入扫描范围的分组，也必须返回 503。
+- **R4 — 分组生效范围**：Codex CLI 客户端限制与送审共用同一生效范围。审计开启后，仅命中配置分组的请求需要 Codex CLI；未命中分组的请求保持原行为，不得因本门禁返回 503。开启“全部分组”时，行为与全局限制相同。
 - **R5 — 入口覆盖**：同一判定契约覆盖普通 HTTP Relay、Realtime WebSocket 握手、Midjourney 提交、原生 Task 提交及 Task Plugin Responses Bridge 提交。只查询任务或资源、不承载提示词提交的接口不受影响。
 - **R6 — 短路保证**：客户端不符合时，不解析/构造提示词快照，不调用 `Evaluator.Evaluate`，不调用 `EventStore.Record`，不预扣费，不选择或调用业务上游渠道。
 - **R7 — Realtime 握手**：Realtime 非 Codex CLI 请求必须在 WebSocket Upgrade 前返回普通 HTTP 503；不得建立客户端 WebSocket，也不得建立上游 WebSocket。
@@ -29,7 +29,7 @@
 
 - [ ] **AC1（R1）**：审计关闭时，无 `Originator`、未知 `Originator` 和合法 Codex `Originator` 均不因本功能被拒绝。
 - [ ] **AC2（R2、R3）**：审计开启时，`codex_cli_rs`、`CODEX_CLI_RS`、`codex-cli`、`codex-tui`、`codex_exec` 及带首尾空白的等价值通过；空值、`curl`、`my-codex_cli_rs-wrapper`、`codex_vscode`、`Codex Desktop` 以及只有 Codex `User-Agent`/会话头的请求均返回 503。
-- [ ] **AC3（R4）**：审计开启且请求分组不匹配扫描范围时，非 Codex CLI 仍返回 503；合法 Codex CLI 继续按既有分组规则放行且不送审。
+- [ ] **AC3（R4）**：审计开启且请求分组不匹配扫描范围时，非 Codex CLI 与合法 Codex CLI 均放行且不送审；仅当请求分组命中扫描范围时，非 Codex CLI 才返回 503。
 - [ ] **AC4（R5、R8）**：HTTP Relay、Midjourney、Task 与 Task Plugin 非 Codex CLI 提交均返回状态 503、错误码 `prompt_audit_codex_cli_required` 和固定安全消息。
 - [ ] **AC5（R6）**：所有非 Codex CLI 拒绝用例均断言 Evaluator 调用数、EventStore 写入数、预扣费次数和业务上游调用数为 0。
 - [ ] **AC6（R7）**：Realtime 非 Codex CLI 请求在 WebSocket Upgrade 前得到 HTTP 503；客户端/上游 WebSocket 连接数均为 0。

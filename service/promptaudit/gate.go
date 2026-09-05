@@ -20,7 +20,7 @@ func CheckRelayRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo, request
 		return nil
 	}
 
-	cfg, gErr := CheckAuditClientAccess(c)
+	cfg, gErr := CheckAuditClientAccess(c, relayInfo)
 	if gErr != nil {
 		return NewRelayAuditError(gErr.Code, gErr.HTTPStatus)
 	}
@@ -103,7 +103,7 @@ func CheckRelayRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo, request
 
 // CheckMidjourneyRequest 在业务提交前执行 Midjourney 请求的同步审计门禁。
 func CheckMidjourneyRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo) *taskdto.MidjourneyResponse {
-	cfg, gErr := CheckAuditClientAccess(c)
+	cfg, gErr := CheckAuditClientAccess(c, relayInfo)
 	if gErr != nil {
 		return toMjError(gErr.Code, gErr.HTTPStatus)
 	}
@@ -252,7 +252,7 @@ func CheckTaskRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo, auditMet
 		return nil
 	}
 
-	cfg, gErr := CheckAuditClientAccess(c)
+	cfg, gErr := CheckAuditClientAccess(c, relayInfo)
 	if gErr != nil {
 		return toTaskError(gErr.Code, gErr.HTTPStatus)
 	}
@@ -360,7 +360,7 @@ func CheckTaskPluginProtocolRequest(c *gin.Context, relayInfo *relaycommon.Relay
 		return nil
 	}
 
-	cfg, gErr := CheckAuditClientAccess(c)
+	cfg, gErr := CheckAuditClientAccess(c, relayInfo)
 	if gErr != nil {
 		return toTaskError(gErr.Code, gErr.HTTPStatus)
 	}

@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -101,7 +103,7 @@ func TestCheckAuditClientAccess_Order(t *testing.T) {
 
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
-		cfg, gErr := CheckAuditClientAccess(c)
+		cfg, gErr := CheckAuditClientAccess(c, nil)
 		assert.Nil(t, gErr)
 		assert.False(t, cfg.Enabled)
 	})
@@ -112,17 +114,17 @@ func TestCheckAuditClientAccess_Order(t *testing.T) {
 
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
-		cfg, gErr := CheckAuditClientAccess(c)
+		cfg, gErr := CheckAuditClientAccess(c, nil)
 		require.Nil(t, gErr)
 		assert.False(t, cfg.Enabled)
 
 		attachOriginator(c, "curl")
-		cfg, gErr = CheckAuditClientAccess(c)
+		cfg, gErr = CheckAuditClientAccess(c, nil)
 		require.Nil(t, gErr)
 		assert.False(t, cfg.Enabled)
 
 		attachCodexCLI(c)
-		cfg, gErr = CheckAuditClientAccess(c)
+		cfg, gErr = CheckAuditClientAccess(c, nil)
 		require.Nil(t, gErr)
 		assert.False(t, cfg.Enabled)
 	})
@@ -133,13 +135,13 @@ func TestCheckAuditClientAccess_Order(t *testing.T) {
 
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
-		_, gErr := CheckAuditClientAccess(c)
+		_, gErr := CheckAuditClientAccess(c, nil)
 		require.NotNil(t, gErr)
 		assert.Equal(t, ErrorCodeConfigDegraded, gErr.Code)
 		assert.Equal(t, http.StatusServiceUnavailable, gErr.HTTPStatus)
 
 		attachCodexCLI(c)
-		_, gErr = CheckAuditClientAccess(c)
+		_, gErr = CheckAuditClientAccess(c, nil)
 		require.NotNil(t, gErr)
 		assert.Equal(t, ErrorCodeConfigDegraded, gErr.Code)
 	})
@@ -151,7 +153,7 @@ func TestCheckAuditClientAccess_Order(t *testing.T) {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
 		attachOriginator(c, "curl")
-		cfg, gErr := CheckAuditClientAccess(c)
+		cfg, gErr := CheckAuditClientAccess(c, nil)
 		require.NotNil(t, gErr)
 		assert.True(t, cfg.Enabled)
 		assert.Equal(t, ErrorCodeCodexCLIRequired, gErr.Code)
@@ -168,7 +170,7 @@ func TestCheckAuditClientAccess_Order(t *testing.T) {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
 		attachCodexCLI(c)
-		cfg, gErr := CheckAuditClientAccess(c)
+		cfg, gErr := CheckAuditClientAccess(c, nil)
 		require.Nil(t, gErr)
 		assert.True(t, cfg.Enabled)
 	})
@@ -181,9 +183,62 @@ func TestCheckAuditClientAccess_Order(t *testing.T) {
 			w := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(w)
 			attachOriginator(c, value)
-			_, gErr := CheckAuditClientAccess(c)
+			_, gErr := CheckAuditClientAccess(c, nil)
 			require.Nil(t, gErr, value)
 		}
+	})
+
+	t.Run("unscoped group skips Codex CLI restriction", func(t *testing.T) {
+		cleanup := setupGateTest(t, ActiveConfig{
+			Enabled:   true,
+			AllGroups: false,
+			GroupsMap: map[string]struct{}{"vip": {}},
+		}, false, nil, nil)
+		defer cleanup()
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		attachOriginator(c, "curl")
+		cfg, gErr := CheckAuditClientAccess(c, &relaycommon.RelayInfo{UsingGroup: "default"})
+		require.Nil(t, gErr)
+		assert.True(t, cfg.Enabled)
+		assert.False(t, cfg.MatchesGroup("default"))
+	})
+
+	t.Run("scoped group still requires Codex CLI", func(t *testing.T) {
+		cleanup := setupGateTest(t, ActiveConfig{
+			Enabled:   true,
+			AllGroups: false,
+			GroupsMap: map[string]struct{}{"vip": {}},
+		}, false, nil, nil)
+		defer cleanup()
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		attachOriginator(c, "curl")
+		cfg, gErr := CheckAuditClientAccess(c, &relaycommon.RelayInfo{UsingGroup: "vip"})
+		require.NotNil(t, gErr)
+		assert.True(t, cfg.Enabled)
+		assert.Equal(t, ErrorCodeCodexCLIRequired, gErr.Code)
+		assert.Equal(t, http.StatusServiceUnavailable, gErr.HTTPStatus)
+		assert.Equal(t, CodexCLIRequiredMessage, gErr.Cause.Error())
+	})
+
+	t.Run("unscoped group from gin context skips Codex CLI restriction", func(t *testing.T) {
+		cleanup := setupGateTest(t, ActiveConfig{
+			Enabled:   true,
+			AllGroups: false,
+			GroupsMap: map[string]struct{}{"vip": {}},
+		}, false, nil, nil)
+		defer cleanup()
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		attachOriginator(c, "curl")
+		common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
+		cfg, gErr := CheckAuditClientAccess(c, nil)
+		require.Nil(t, gErr)
+		assert.True(t, cfg.Enabled)
 	})
 }
 

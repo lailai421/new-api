@@ -40,7 +40,7 @@
 ### 测试
 
 - 每个入口至少一个非 Codex 503 用例。
-- group mismatch 的非 Codex 仍 503；合法 Codex 仍按分组放行。
+- group mismatch 的非 Codex 放行且不送审；命中分组的非 Codex 仍 503；合法 Codex 仍按分组放行。
 - 每个拒绝用例断言 Evaluator=0、EventStore=0；controller 级用例继续断言预扣费和业务上游=0。
 - 响应体和日志不得包含请求头、Prompt 或 Token。
 

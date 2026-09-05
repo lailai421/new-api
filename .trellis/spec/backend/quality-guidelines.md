@@ -59,6 +59,7 @@ Questions to answer:
    - Official CLI values: `codex_cli_rs` (default HTTP client), `codex-tui` (interactive TUI; this is the common live value), `codex_exec` (`codex exec`), plus `codex-cli` as a compatibility alias.
    - Do not allow `codex_vscode`, `Codex Desktop`, `codex_monitor`, display text `Codex CLI`, or substring wrappers.
    - Allowlist changes must be explicit complete values plus contract tests; no prefix/wildcard matching.
+   - Codex CLI restriction uses the same group scope as prompt scanning (`MatchesGroup`). Unscoped groups must not receive `prompt_audit_codex_cli_required`.
 
 ---
 

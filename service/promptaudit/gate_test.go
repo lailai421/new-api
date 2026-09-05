@@ -100,7 +100,7 @@ func TestCheckRelayRequest_DisabledAndGroupMismatch(t *testing.T) {
 	assert.Equal(t, 0, eval.called)
 	cleanup()
 
-	// 3. 分组未命中 + 非 Codex CLI -> 仍因客户端门禁 503
+	// 3. 分组未命中 + 非 Codex CLI -> 放行且不送审（生效范围同时约束 Codex 限制）
 	attachOriginator(c, "curl")
 	cleanup = setupGateTest(t, ActiveConfig{
 		Enabled:   true,
@@ -108,6 +108,19 @@ func TestCheckRelayRequest_DisabledAndGroupMismatch(t *testing.T) {
 		GroupsMap: map[string]struct{}{"vip": {}},
 	}, false, eval, store)
 	err = CheckRelayRequest(c, info, req)
+	assert.Nil(t, err)
+	assert.Equal(t, 0, eval.called)
+	assert.Len(t, store.recorded, 0)
+	cleanup()
+
+	// 4. 分组命中 + 非 Codex CLI -> 仍因客户端门禁 503
+	infoVIP := &relaycommon.RelayInfo{UsingGroup: "vip"}
+	cleanup = setupGateTest(t, ActiveConfig{
+		Enabled:   true,
+		AllGroups: false,
+		GroupsMap: map[string]struct{}{"vip": {}},
+	}, false, eval, store)
+	err = CheckRelayRequest(c, infoVIP, req)
 	require.NotNil(t, err)
 	assert.Equal(t, http.StatusServiceUnavailable, err.StatusCode)
 	assert.Equal(t, types.ErrorCode(ErrorCodeCodexCLIRequired), err.GetErrorCode())

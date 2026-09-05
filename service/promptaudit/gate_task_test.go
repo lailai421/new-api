@@ -173,6 +173,36 @@ func TestCheckTaskRequest(t *testing.T) {
 		assert.False(t, c.GetBool(ContextKeyTaskAuditDone))
 	})
 
+	t.Run("unscoped group skips Codex CLI restriction", func(t *testing.T) {
+		eval := &mockEvaluator{}
+		store := &mockEventStore{}
+		cleanup := setupGateTest(t, ActiveConfig{
+			Enabled:   true,
+			AllGroups: false,
+			GroupsMap: map[string]struct{}{"vip": {}},
+		}, false, eval, store)
+		defer cleanup()
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Set("task_request", map[string]any{
+			"prompt": "CANARY_TASK_PROMPT",
+		})
+
+		taskErr := CheckTaskRequest(c, &relaycommon.RelayInfo{
+			OriginModelName: "kling-v1",
+			UsingGroup:      "default",
+		}, TaskAuditMeta{
+			PluginKey:           "kling",
+			AuditTextPaths:      []string{"/prompt"},
+			HasSubmitCapability: true,
+			Found:               true,
+		})
+		assert.Nil(t, taskErr)
+		assert.Equal(t, 0, eval.called)
+		assert.Len(t, store.recorded, 0)
+	})
+
 	t.Run("plugin protocol non Codex CLI returns 503", func(t *testing.T) {
 		eval := &mockEvaluator{}
 		store := &mockEventStore{}

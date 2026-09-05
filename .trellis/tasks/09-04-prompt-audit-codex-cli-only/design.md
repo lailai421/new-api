@@ -2,7 +2,7 @@
 
 ## 1. 设计目标
 
-在不增加配置和数据库状态的前提下，把 Codex CLI 兼容性检查作为提示词审计的前置门禁：全局审计关闭时无影响；开启时非 Codex CLI 统一 503，并保证 Guard、事件、计费及业务上游调用均为 0。
+在不增加配置和数据库状态的前提下，把 Codex CLI 兼容性检查作为提示词审计的前置门禁：全局审计关闭时无影响；开启且命中生效分组时非 Codex CLI 统一 503，并保证 Guard、事件、计费及业务上游调用均为 0。未命中分组的请求保持原行为。
 
 ## 2. 边界与不变量
 
@@ -10,7 +10,7 @@
 |---|---|
 | 审计 `off` / `blocking` 两态 | `blocking` 开启后增加 Codex CLI 前置门禁 |
 | 配置 degraded、Guard 异常继续失败关闭 | 新增 `prompt_audit_codex_cli_required` 503 |
-| 分组仅决定合法 Codex 请求是否送审 | 非 Codex 限制早于分组匹配 |
+| 未命中分组的请求不送审 | 未命中分组的请求也不检查 Originator |
 | Prompt 提取、Snapshot、分类和事件结构 | 非 Codex 不再进入这些阶段 |
 | 计费、渠道选择、重试语义 | 非 Codex 在这些阶段之前短路且禁止重试 |
 | Realtime 提示词仍逐帧审计 | Realtime 客户端身份在 Upgrade 前检查 |
@@ -44,6 +44,7 @@
 Manager 不存在             → 视为审计未启用，保持原行为
 配置 degraded              → 保持既有 prompt_audit_config_degraded 503
 ActiveConfig.Enabled=false → 保持原行为
+分组未命中                  → 保持原行为（不检查 Originator）
 Originator 非允许值         → prompt_audit_codex_cli_required 503
 Originator 允许             → 继续既有分组与审计流程
 ```
@@ -62,8 +63,9 @@ TokenAuth / Distribute
         │
         ├─ Manager nil / audit off → 原行为
         ├─ degraded                → 原 503
-        ├─ 非 Codex Originator      → 新 503，立即返回
-        └─ Codex Originator         → group match → Extract → Snapshot
+        ├─ 分组未命中               → 原行为（不检查 Originator）
+        ├─ 命中分组且非 Codex       → 新 503，立即返回
+        └─ 命中分组且 Codex         → Extract → Snapshot
                                                → Evaluator → EventStore
                                                → billing → upstream
 ```
@@ -77,9 +79,9 @@ GET /v1/realtime
         │
         ▼
 统一客户端前置门禁
-        ├─ 非 Codex / degraded → HTTP JSON 503（尚未 Upgrade）
-        └─ off / Codex         → WebSocket Upgrade
-                                  └─ 原 ShouldAuditRealtime / 帧级审计
+        ├─ degraded / 命中分组且非 Codex → HTTP JSON 503（尚未 Upgrade）
+        └─ off / 未命中分组 / Codex      → WebSocket Upgrade
+                                           └─ 原 ShouldAuditRealtime / 帧级审计
 ```
 
 身份检查不尝试审计握手中的占位请求，也不替代帧级提示词审计。合法 Codex Realtime 的上游连接延迟策略保持不变。
@@ -102,7 +104,8 @@ GET /v1/realtime
 ### 7.2 Gate 顺序测试
 
 - off + 无 Originator：放行，Evaluator/EventStore 为 0。
-- enabled + 非 Codex + group mismatch：503，证明身份限制早于分组。
+- enabled + 非 Codex + group mismatch：放行且不送审，证明生效范围同时约束 Codex 限制。
+- enabled + 非 Codex + group hit：503。
 - enabled + Codex + group mismatch：放行且不送审，证明分组语义未改变。
 - enabled + Codex + group hit：进入原 Evaluator 流程。
 - degraded + 任意客户端：仍返回 config degraded。
@@ -117,7 +120,7 @@ HTTP Relay、Midjourney、Task、Task Plugin 分别断言 503/错误结构，并
 
 ## 8. 兼容、上线与回滚
 
-- 行为变化是有意的全局收紧：启用审计后，Claude Code、Cursor、curl、自建 SDK、网页 Playground 及其他非 Codex 客户端的受保护提交会得到 503。
+- 行为变化仅作用于命中生效范围的请求：启用审计后，Claude Code、Cursor、curl、自建 SDK、网页 Playground 及其他非 Codex 客户端，在命中配置分组时会得到 503；未命中分组的请求保持原行为。
 - 非提交 API 不受影响；管理员仍可关闭审计恢复原兼容范围。
 - 无数据库迁移和历史数据处理，部署采用普通应用滚动发布。
 - 回滚只需移除客户端门禁、错误码与对应测试夹具变更；不会留下持久化数据副作用。
