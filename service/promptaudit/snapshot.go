@@ -178,6 +178,13 @@ func StripAgentsMdEnvelopes(segments []PromptSegment) []PromptSegment {
 const (
 	CodexTitlePrefix   = "Generate a concise, single-line task title of at most "
 	CodexCatchUpPrefix = "Write a brief catch-up for a user returning to this Codex task."
+
+	// Codex 本地压缩（非 OpenAI 托管模型）会把该模板作为独立 user 消息追加到 /v1/responses。
+	CodexCompactionPrefix        = "You are performing a CONTEXT CHECKPOINT COMPACTION."
+	CodexCompactionHandoffMarker = "Create a handoff summary for another LLM that will resume the task."
+	// 较新的中断压缩路径：Interrupted. + You are now performing...
+	CodexCompactionNowMarker           = "You are now performing a CONTEXT CHECKPOINT COMPACTION."
+	CodexCompactionToolsDisabledMarker = "Tools access is disabled for the duration of the compaction."
 )
 
 type pairedTag struct {
@@ -317,6 +324,40 @@ func StripCodexCatchUp(segments []PromptSegment) []PromptSegment {
 			continue
 		}
 		if isCodexCatchUpTemplate(seg.Content) {
+			continue
+		}
+		result = append(result, seg)
+	}
+	return result
+}
+
+// isCodexCompactionTemplate 判定是否为 Codex CLI 上下文压缩自动请求。
+// 契约：完整压缩模板，而不是用户讨论 “CONTEXT CHECKPOINT COMPACTION”。
+func isCodexCompactionTemplate(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return false
+	}
+	if strings.HasPrefix(trimmed, CodexCompactionPrefix) && strings.Contains(trimmed, CodexCompactionHandoffMarker) {
+		return true
+	}
+	if strings.Contains(trimmed, CodexCompactionNowMarker) && strings.Contains(trimmed, CodexCompactionToolsDisabledMarker) {
+		return true
+	}
+	return false
+}
+
+// StripCodexCompaction 丢弃 Codex CLI 上下文压缩自动 user 段。
+// 匹配模板的整段丢弃（压缩指令不是用户提问，送审会被误判为 jailbreak）；
+// 非 user 分段与未匹配模板的 user 分段原样保留。
+func StripCodexCompaction(segments []PromptSegment) []PromptSegment {
+	result := make([]PromptSegment, 0, len(segments))
+	for _, seg := range segments {
+		if !seg.IsUser() {
+			result = append(result, seg)
+			continue
+		}
+		if isCodexCompactionTemplate(seg.Content) {
 			continue
 		}
 		result = append(result, seg)
@@ -506,11 +547,12 @@ func BuildPromptSnapshot(
 		return PromptSnapshot{}, ErrNoPrompt
 	}
 
-	// 剥离 Codex 注入的 AGENTS.md 信封、成对上下文标记块、标题生成模板及回看摘要模板，确保后续只包含用户真实提示词
+	// 剥离 Codex 注入的 AGENTS.md 信封、成对上下文标记块、标题生成模板、回看摘要及压缩指令，确保后续只包含用户真实提示词
 	cleanSegments := StripAgentsMdEnvelopes(segments)
 	cleanSegments = StripCodexContextualUser(cleanSegments)
 	cleanSegments = UnwrapCodexThreadTitle(cleanSegments)
 	cleanSegments = StripCodexCatchUp(cleanSegments)
+	cleanSegments = StripCodexCompaction(cleanSegments)
 	normalized := NormalizeSegments(cleanSegments)
 
 	fullPrompt := JoinUserSegments(normalized)

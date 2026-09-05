@@ -212,6 +212,70 @@ func TestCodexContext_CatchUp_DroppedOrKept(t *testing.T) {
 	assert.Equal(t, prefixOnly, snapshotPrefix.FullPrompt)
 }
 
+const sampleCodexCompaction = `You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume the task.
+
+Include:
+- Current progress and key decisions made
+- Important context, constraints, or user preferences
+- What remains to be done (clear next steps)
+- Any critical data, examples, or references needed to continue
+
+Be concise, structured, and focused on helping the next LLM seamlessly continue the work.`
+
+const sampleCodexCompactionInterrupted = `Interrupted.
+You are now performing a CONTEXT CHECKPOINT COMPACTION.
+Tools access is disabled for the duration of the compaction.
+Output nothing but the summary handoff contents.`
+
+func TestCodexContext_Compaction_DroppedOrKept(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	realUser := "开始实施"
+	segments := []PromptSegment{
+		{Role: "user", Content: realUser},
+		{Role: "user", Content: sampleCodexCompaction},
+	}
+	snapshot, err := BuildPromptSnapshot(c, nil, "chat", "gpt-4o", segments, false)
+	require.NoError(t, err)
+	assert.Equal(t, realUser, snapshot.ScanText)
+	assert.Equal(t, realUser, snapshot.FullPrompt)
+	assert.Equal(t, 1, snapshot.MessageCount)
+	assert.NotContains(t, snapshot.FullPrompt, "CONTEXT CHECKPOINT COMPACTION")
+	assert.NotContains(t, snapshot.ScanText, "handoff summary")
+
+	interruptedSegments := []PromptSegment{
+		{Role: "user", Content: realUser},
+		{Role: "user", Content: sampleCodexCompactionInterrupted},
+	}
+	snapshotInterrupted, err := BuildPromptSnapshot(c, nil, "chat", "gpt-4o", interruptedSegments, false)
+	require.NoError(t, err)
+	assert.Equal(t, realUser, snapshotInterrupted.FullPrompt)
+	assert.Equal(t, realUser, snapshotInterrupted.ScanText)
+
+	discuss := "Codex 的 CONTEXT CHECKPOINT COMPACTION 是什么意思？请解释一下。"
+	snapshotDiscuss, err := BuildPromptSnapshot(c, nil, "chat", "gpt-4o", []PromptSegment{
+		{Role: "user", Content: discuss},
+	}, false)
+	require.NoError(t, err)
+	assert.Equal(t, discuss, snapshotDiscuss.FullPrompt)
+	assert.Equal(t, discuss, snapshotDiscuss.ScanText)
+
+	prefixOnly := CodexCompactionPrefix + " 请总结当前进度。"
+	snapshotPrefix, err := BuildPromptSnapshot(c, nil, "chat", "gpt-4o", []PromptSegment{
+		{Role: "user", Content: prefixOnly},
+	}, false)
+	require.NoError(t, err)
+	assert.Equal(t, prefixOnly, snapshotPrefix.FullPrompt)
+	assert.Equal(t, prefixOnly, snapshotPrefix.ScanText)
+
+	latestOnly, err := BuildPromptSnapshot(c, nil, "chat", "gpt-4o", segments, true)
+	require.NoError(t, err)
+	assert.Equal(t, realUser, latestOnly.ScanText)
+	assert.Equal(t, realUser, latestOnly.FullPrompt)
+}
+
 // AC4: 用户输入提到当前工作目录但无标签，整段仍送审、仍落库。
 func TestCodexContext_UserMention_Kept(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -315,6 +379,24 @@ func TestCodexContext_OnlyContextOrTemplate_NoHttp_NoStore(t *testing.T) {
 	assert.Equal(t, int32(0), atomic.LoadInt32(&guardCalls))
 
 	err = store.Record(ctx, snapshotCatchUp, decCatchUp, true)
+	require.NoError(t, err)
+
+	// 4. 只有 Codex 上下文压缩模板
+	compactionOnlySegments := []PromptSegment{
+		{Role: "user", Content: sampleCodexCompaction},
+	}
+	snapshotCompaction, err := BuildPromptSnapshot(c, nil, "chat", "gpt-4o", compactionOnlySegments, false)
+	require.NoError(t, err)
+	assert.Empty(t, snapshotCompaction.ScanText)
+	assert.Empty(t, snapshotCompaction.FullPrompt)
+
+	decCompaction, err := evaluator.Evaluate(ctx, cfg, snapshotCompaction)
+	require.NoError(t, err)
+	assert.Equal(t, DecisionAllow, decCompaction.Kind)
+	assert.True(t, decCompaction.AllowNextStage)
+	assert.Equal(t, int32(0), atomic.LoadInt32(&guardCalls))
+
+	err = store.Record(ctx, snapshotCompaction, decCompaction, true)
 	require.NoError(t, err)
 
 	// 确认数据库没有插入任何事件

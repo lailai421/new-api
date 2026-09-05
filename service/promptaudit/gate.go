@@ -41,6 +41,11 @@ func CheckRelayRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo, request
 		return NewRelayAuditError(ErrorCodeUnsupportedProtocol, http.StatusServiceUnavailable)
 	}
 
+	// Codex CLI 远程压缩（POST /v1/responses/compact）是会话压缩，不是新的用户提问，不得送审。
+	if protocol == "openai_responses_compaction" {
+		return nil
+	}
+
 	snapshot, err := BuildPromptSnapshot(c, relayInfo, protocol, modelName, segments, cfg.LatestTurnOnly)
 	if err != nil {
 		if errors.Is(err, ErrNoPrompt) {
