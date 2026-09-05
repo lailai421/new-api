@@ -31,10 +31,12 @@
 
 - `setting/operation_setting/channel_affinity_setting.go:39-66` 已把 `Originator`、`User-Agent`、Session/Thread 及 `X-Codex-*` 列为 Codex CLI 透传头。
 - `relay/channel/codex/adaptor.go:185-187` 和 `service/codex_wham_usage.go:158-160` 在缺失时写入 `originator: codex_cli_rs`，这是仓库内最明确的机器可读 Codex 标识。
-- 本机 CLI 版本输出为 `codex-cli 0.153.2`，发行标识使用 `codex-cli`。为兼容当前发行标识与仓库既有 `codex_cli_rs` 标识，方案采用两个**完整值**的显式允许集合。
-- `relay/channel/api_request_test.go:161-205` 中的 `Originator: Codex CLI` 是请求头透传测试数据，不是生产端写入契约；首版不把展示文案值加入允许集合。
+- 本机 CLI 版本输出为 `codex-cli 0.153.2`，发行标识使用 `codex-cli`。仓库出站适配器在缺失时写入 `codex_cli_rs`。
+- 官方 Codex 0.153.2 的真实入站 Originator 与发行标识不同：交互 TUI 会话元数据为 `codex-tui`（本机 2414 条会话），默认 HTTP 客户端/部分历史会话为 `codex_cli_rs`，`codex exec` 为 `codex_exec`。TUI 会在请求头覆盖默认 `codex_cli_rs`。
+- 本机还观察到非 CLI 第一方值 `Codex Desktop`、`codex_monitor`，首版不允许。
+- `relay/channel/api_request_test.go:161-205` 中的 `Originator: Codex CLI` 是请求头透传测试数据，不是生产端写入契约；不把展示文案值加入允许集合。
 
-判定规则：Go `http.Header.Get` 已处理头名大小写；对值做 `TrimSpace` 和 ASCII 小写后，只接受 `codex_cli_rs`、`codex-cli`。不做子串、正则或 User-Agent 回退。
+判定规则：Go `http.Header.Get` 已处理头名大小写；对值做 `TrimSpace` 和 ASCII 小写后，只接受 `codex_cli_rs`、`codex-cli`、`codex-tui`、`codex_exec`。不做子串、正则或 User-Agent 回退。
 
 ## 4. 信任边界
 

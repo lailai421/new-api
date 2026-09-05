@@ -23,7 +23,7 @@
 
 1. 从原始入站请求读取 `Originator`；请求或 Header 缺失视为不匹配。
 2. `strings.TrimSpace` 后做 ASCII 小写。
-3. 仅完整匹配 `codex_cli_rs` 或 `codex-cli`。
+3. 仅完整匹配 `codex_cli_rs`、`codex-cli`、`codex-tui` 或 `codex_exec`。
 4. 不读取请求体，不解析 User-Agent，不使用 Session/Thread/X-Codex 头回退。
 5. 不在日志或错误中输出实际头值。
 
@@ -97,7 +97,7 @@ GET /v1/realtime
 
 ### 7.1 纯识别测试
 
-确定性表格覆盖：两个允许值、大小写、首尾空白、空值、未知值、子串伪装、只有 User-Agent/Session/X-Codex 头。只断言公开行为，不锁定函数内部实现。
+确定性表格覆盖：四个允许值、大小写、首尾空白、空值、未知值、子串伪装、VS Code/Desktop/Monitor、只有 User-Agent/Session/X-Codex 头。只断言公开行为，不锁定函数内部实现。
 
 ### 7.2 Gate 顺序测试
 

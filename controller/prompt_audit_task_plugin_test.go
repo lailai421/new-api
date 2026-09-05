@@ -152,6 +152,7 @@ func TestTaskPluginPromptAudit_TenBuiltinPlugins(t *testing.T) {
 
 			wPass := httptest.NewRecorder()
 			cPass, _ := gin.CreateTestContext(wPass)
+			attachCodexCLIHeader(cPass)
 			cPass.Set("task_request", p.body)
 			cPass.Set("user_id", 1)
 			relayInfoPass := &relaycommon.RelayInfo{
@@ -181,6 +182,7 @@ func TestTaskPluginPromptAudit_TenBuiltinPlugins(t *testing.T) {
 
 			wBlock := httptest.NewRecorder()
 			cBlock, _ := gin.CreateTestContext(wBlock)
+			attachCodexCLIHeader(cBlock)
 			cBlock.Set("task_request", p.body)
 			cBlock.Set("user_id", 1)
 			relayInfoBlock := &relaycommon.RelayInfo{
@@ -211,6 +213,7 @@ func TestTaskPluginPromptAudit_ThirdPartyPluginFailClosed(t *testing.T) {
 	t.Run("audit enabled -> fails closed with 503 unsupported protocol", func(t *testing.T) {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
+		attachCodexCLIHeader(c)
 		c.Set("task_request", map[string]any{"prompt": "test prompt"})
 		c.Set("user_id", 1)
 		relayInfo := &relaycommon.RelayInfo{
@@ -250,6 +253,7 @@ func TestTaskPluginPromptAudit_ThirdPartyPluginFailClosed(t *testing.T) {
 
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
+		attachCodexCLIHeader(c)
 		c.Set("task_request", map[string]any{"prompt": "test prompt"})
 		c.Set("user_id", 1)
 		c.Set("group", "default") // non-matching group
@@ -292,6 +296,7 @@ func TestTaskPluginPromptAudit_ResponsesBridge(t *testing.T) {
 
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
+		attachCodexCLIHeader(c)
 		c.Set("protocol_request", protoContext)
 		c.Set("task_request", map[string]any{
 			"prompt": "Generate an epic space battle",
@@ -332,6 +337,7 @@ func TestTaskPluginPromptAudit_ResponsesBridge(t *testing.T) {
 
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
+		attachCodexCLIHeader(c)
 		c.Set("protocol_request", protoContext)
 		c.Set("task_request", map[string]any{
 			"prompt": "Generate an epic space battle",
@@ -445,6 +451,7 @@ export function buildSubmitRequest(){return {}} export function parseSubmitRespo
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/kling/submit", strings.NewReader(`{"prompt":"forbidden video"}`))
+	attachCodexCLIHeader(c)
 	c.Set(pluginruntime.ContextKeyPinnedRoute, pluginruntime.PinnedRoute{Plugin: plugin, Route: plugin.Meta.Routes[0]})
 	c.Set(pluginruntime.ContextKeyRouteRequest, pluginruntime.RouteRequestContext{
 		Path:   "/kling/submit",
@@ -471,4 +478,102 @@ export function buildSubmitRequest(){return {}} export function parseSubmitRespo
 	var taskCount int64
 	require.NoError(t, model.DB.Model(&model.Task{}).Count(&taskCount).Error)
 	assert.Equal(t, int64(0), taskCount, "Blocked task must not persist any task record")
+}
+
+func TestTaskPluginPromptAudit_CodexCLIRequired(t *testing.T) {
+	initTestDatabase(t)
+	gin.SetMode(gin.TestMode)
+
+	eval := &mockTaskGateEvaluator{
+		decision: &promptaudit.Decision{
+			Kind:           promptaudit.DecisionAllow,
+			AllowNextStage: true,
+		},
+	}
+	promptaudit.SetGlobalEvaluator(eval)
+
+	canaryPrompt := "CANARY_TASK_PROMPT_DO_NOT_LEAK"
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/kling/submit", strings.NewReader(`{"prompt":"`+canaryPrompt+`"}`))
+	c.Request.Header.Set("Originator", "curl")
+	c.Request.Header.Set("User-Agent", "CANARY_UA_TASK")
+	common.SetContextKey(c, common.RequestIdKey, "req-task-unknown-client")
+	c.Set("task_request", map[string]any{"prompt": canaryPrompt})
+	c.Set("user_id", 1)
+	c.Set("token_id", 1)
+	c.Set("group", "default")
+	c.Set("resolved_task_model", "kling-v1")
+
+	RelayTask(c)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Contains(t, w.Body.String(), promptaudit.ErrorCodeCodexCLIRequired)
+	assert.Contains(t, w.Body.String(), promptaudit.CodexCLIRequiredMessage)
+	assert.Equal(t, 0, eval.calls)
+	assert.False(t, c.GetBool(promptaudit.ContextKeyTaskAuditDone))
+	assert.False(t, c.GetBool("preconsumed_quota_flag"))
+	assert.Empty(t, c.GetStringSlice("use_channel"))
+	assert.NotContains(t, w.Body.String(), canaryPrompt)
+	assert.NotContains(t, w.Body.String(), "curl")
+	assert.NotContains(t, w.Body.String(), "CANARY_UA_TASK")
+
+	var taskCount int64
+	require.NoError(t, model.DB.Model(&model.Task{}).Count(&taskCount).Error)
+	assert.Equal(t, int64(0), taskCount)
+	var eventCount int64
+	require.NoError(t, model.DB.Model(&model.PromptAuditEvent{}).Count(&eventCount).Error)
+	assert.Equal(t, int64(0), eventCount)
+}
+
+func TestTaskPluginProtocolPromptAudit_CodexCLIRequired(t *testing.T) {
+	initTestDatabase(t)
+	gin.SetMode(gin.TestMode)
+
+	eval := &mockTaskGateEvaluator{
+		decision: &promptaudit.Decision{
+			Kind:           promptaudit.DecisionAllow,
+			AllowNextStage: true,
+		},
+	}
+	promptaudit.SetGlobalEvaluator(eval)
+
+	canaryPrompt := "CANARY_PLUGIN_PROMPT_DO_NOT_LEAK"
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"sora"}`))
+	c.Request.Header.Set("Originator", "my-codex_cli_rs-wrapper")
+	c.Set("task_request", map[string]any{"prompt": canaryPrompt})
+	c.Set("user_id", 1)
+
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "sora",
+		RelayFormat:     types.RelayFormatTask,
+		RelayMode:       relayconstant.RelayModeVideoSubmit,
+	}
+	auditMeta := promptaudit.TaskAuditMeta{
+		PluginKey:           "sora",
+		AuditTextPaths:      []string{"/prompt"},
+		HasSubmitCapability: true,
+		Found:               true,
+	}
+
+	taskErr := promptaudit.CheckTaskPluginProtocolRequest(c, relayInfo, auditMeta)
+	require.NotNil(t, taskErr)
+	assert.Equal(t, http.StatusServiceUnavailable, taskErr.StatusCode)
+	assert.Equal(t, promptaudit.ErrorCodeCodexCLIRequired, taskErr.Code)
+	assert.Equal(t, promptaudit.CodexCLIRequiredMessage, taskErr.Message)
+	assert.True(t, taskErr.LocalError)
+	assert.Equal(t, 0, eval.calls)
+
+	respondPluginProtocolSubmissionError(c, taskErr)
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Contains(t, w.Body.String(), promptaudit.ErrorCodeCodexCLIRequired)
+	assert.Contains(t, w.Body.String(), promptaudit.CodexCLIRequiredMessage)
+	assert.NotContains(t, w.Body.String(), canaryPrompt)
+	assert.NotContains(t, w.Body.String(), "my-codex_cli_rs-wrapper")
+
+	var eventCount int64
+	require.NoError(t, model.DB.Model(&model.PromptAuditEvent{}).Count(&eventCount).Error)
+	assert.Equal(t, int64(0), eventCount)
 }

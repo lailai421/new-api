@@ -1265,6 +1265,9 @@ func respondPluginProtocolSubmissionError(c *gin.Context, taskErr *dto.TaskError
 		case promptaudit.ErrorCodeBlocked:
 			respondPluginProtocolError(c, status, taskErr.Code, "The prompt violates safety policies.")
 			return
+		case promptaudit.ErrorCodeCodexCLIRequired:
+			respondPluginProtocolError(c, status, taskErr.Code, promptaudit.CodexCLIRequiredMessage)
+			return
 		case promptaudit.ErrorCodeUnavailable,
 			promptaudit.ErrorCodeInvalidResponse,
 			promptaudit.ErrorCodeConfigDegraded,

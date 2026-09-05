@@ -33,6 +33,7 @@ func TestCheckTaskRequest(t *testing.T) {
 
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
+		attachCodexCLI(c)
 		c.Set("task_request", map[string]any{
 			"prompt": "harmful content",
 		})
@@ -67,6 +68,7 @@ func TestCheckTaskRequest(t *testing.T) {
 
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
+		attachCodexCLI(c)
 		c.Set("task_request", map[string]any{
 			"prompt": "friendly video generation",
 		})
@@ -97,6 +99,7 @@ func TestCheckTaskRequest(t *testing.T) {
 
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
+		attachCodexCLI(c)
 		c.Set("task_request", map[string]any{
 			"prompt": "some text",
 		})
@@ -134,5 +137,66 @@ func TestCheckTaskRequest(t *testing.T) {
 		assert.Equal(t, http.StatusServiceUnavailable, taskErr.StatusCode)
 		assert.Equal(t, ErrorCodeConfigDegraded, taskErr.Code)
 		assert.True(t, taskErr.LocalError)
+	})
+
+	t.Run("non Codex CLI returns 503 before extract", func(t *testing.T) {
+		eval := &mockEvaluator{}
+		store := &mockEventStore{}
+		cleanup := setupGateTest(t, baseCfg, false, eval, store)
+		defer cleanup()
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Set("task_request", map[string]any{
+			"prompt": "CANARY_TASK_PROMPT",
+		})
+		c.Set("user_id", 1)
+
+		relayInfo := &relaycommon.RelayInfo{
+			OriginModelName: "kling-v1",
+		}
+		auditMeta := TaskAuditMeta{
+			PluginKey:           "kling",
+			AuditTextPaths:      []string{"/prompt"},
+			HasSubmitCapability: true,
+			Found:               true,
+		}
+
+		taskErr := CheckTaskRequest(c, relayInfo, auditMeta)
+		require.NotNil(t, taskErr)
+		assert.Equal(t, http.StatusServiceUnavailable, taskErr.StatusCode)
+		assert.Equal(t, ErrorCodeCodexCLIRequired, taskErr.Code)
+		assert.Equal(t, CodexCLIRequiredMessage, taskErr.Message)
+		assert.True(t, taskErr.LocalError)
+		assert.Equal(t, 0, eval.called)
+		assert.Len(t, store.recorded, 0)
+		assert.False(t, c.GetBool(ContextKeyTaskAuditDone))
+	})
+
+	t.Run("plugin protocol non Codex CLI returns 503", func(t *testing.T) {
+		eval := &mockEvaluator{}
+		store := &mockEventStore{}
+		cleanup := setupGateTest(t, baseCfg, false, eval, store)
+		defer cleanup()
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Set("task_request", map[string]any{
+			"prompt": "CANARY_PLUGIN_PROMPT",
+		})
+
+		taskErr := CheckTaskPluginProtocolRequest(c, &relaycommon.RelayInfo{OriginModelName: "sora"}, TaskAuditMeta{
+			PluginKey:           "sora",
+			AuditTextPaths:      []string{"/prompt"},
+			HasSubmitCapability: true,
+			Found:               true,
+		})
+		require.NotNil(t, taskErr)
+		assert.Equal(t, http.StatusServiceUnavailable, taskErr.StatusCode)
+		assert.Equal(t, ErrorCodeCodexCLIRequired, taskErr.Code)
+		assert.Equal(t, CodexCLIRequiredMessage, taskErr.Message)
+		assert.True(t, taskErr.LocalError)
+		assert.Equal(t, 0, eval.called)
+		assert.Len(t, store.recorded, 0)
 	})
 }

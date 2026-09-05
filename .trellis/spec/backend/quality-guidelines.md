@@ -53,6 +53,13 @@ Questions to answer:
    - Any controller or gate inspecting the request body must use `common.UnmarshalBodyReusable`.
    - Downstream request processing must preserve explicit zero values (e.g. `temperature: 0.0`, `stream: false`).
 
+6. **Codex CLI Client Identification**:
+   - Identify Codex CLI only from the inbound HTTP `Originator` full value after Trim + ASCII lowercasing.
+   - Do not treat `codex --version` (`codex-cli x.y.z`), User-Agent, or the outbound adaptor default `originator: codex_cli_rs` as the inbound contract.
+   - Official CLI values: `codex_cli_rs` (default HTTP client), `codex-tui` (interactive TUI; this is the common live value), `codex_exec` (`codex exec`), plus `codex-cli` as a compatibility alias.
+   - Do not allow `codex_vscode`, `Codex Desktop`, `codex_monitor`, display text `Codex CLI`, or substring wrappers.
+   - Allowlist changes must be explicit complete values plus contract tests; no prefix/wildcard matching.
+
 ---
 
 ## Testing Requirements

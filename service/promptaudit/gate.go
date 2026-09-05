@@ -20,16 +20,10 @@ func CheckRelayRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo, request
 		return nil
 	}
 
-	mgr := GetManager()
-	if mgr == nil {
-		return nil
+	cfg, gErr := CheckAuditClientAccess(c)
+	if gErr != nil {
+		return NewRelayAuditError(gErr.Code, gErr.HTTPStatus)
 	}
-
-	if mgr.IsDegraded() {
-		return toRelayError(ErrorCodeConfigDegraded, http.StatusServiceUnavailable)
-	}
-
-	cfg := mgr.Active()
 	if !cfg.Enabled {
 		return nil
 	}
@@ -44,7 +38,7 @@ func CheckRelayRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo, request
 		return nil
 	}
 	if err != nil {
-		return toRelayError(ErrorCodeUnsupportedProtocol, http.StatusServiceUnavailable)
+		return NewRelayAuditError(ErrorCodeUnsupportedProtocol, http.StatusServiceUnavailable)
 	}
 
 	snapshot, err := BuildPromptSnapshot(c, relayInfo, protocol, modelName, segments, cfg.LatestTurnOnly)
@@ -52,12 +46,12 @@ func CheckRelayRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo, request
 		if errors.Is(err, ErrNoPrompt) {
 			return nil
 		}
-		return toRelayError(ErrorCodeUnsupportedProtocol, http.StatusServiceUnavailable)
+		return NewRelayAuditError(ErrorCodeUnsupportedProtocol, http.StatusServiceUnavailable)
 	}
 
 	evaluator := GetEvaluator()
 	if evaluator == nil {
-		return toRelayError(ErrorCodeUnavailable, http.StatusServiceUnavailable)
+		return NewRelayAuditError(ErrorCodeUnavailable, http.StatusServiceUnavailable)
 	}
 
 	ctx := getRequestContext(c)
@@ -76,7 +70,7 @@ func CheckRelayRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo, request
 		if store != nil {
 			_ = store.Record(ctx, snapshot, &Decision{Kind: DecisionUnavailable, ErrorCode: code, LatencyMS: latencyMS}, true)
 		}
-		return toRelayError(code, http.StatusServiceUnavailable)
+		return NewRelayAuditError(code, http.StatusServiceUnavailable)
 	}
 
 	if decision != nil && decision.Kind == DecisionBlock {
@@ -84,11 +78,11 @@ func CheckRelayRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo, request
 		if store != nil {
 			_ = store.Record(ctx, snapshot, decision, true)
 		}
-		return toRelayError(ErrorCodeBlocked, http.StatusForbidden)
+		return NewRelayAuditError(ErrorCodeBlocked, http.StatusForbidden)
 	}
 
 	if decision != nil && !decision.AllowNextStage {
-		return toRelayError(ErrorCodeUnavailable, http.StatusServiceUnavailable)
+		return NewRelayAuditError(ErrorCodeUnavailable, http.StatusServiceUnavailable)
 	}
 
 	if cfg.StorePassEvents {
@@ -97,10 +91,10 @@ func CheckRelayRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo, request
 		}
 		store := GetEventStore()
 		if store == nil {
-			return toRelayError(ErrorCodeRecordFailed, http.StatusServiceUnavailable)
+			return NewRelayAuditError(ErrorCodeRecordFailed, http.StatusServiceUnavailable)
 		}
 		if err := store.Record(ctx, snapshot, decision, true); err != nil {
-			return toRelayError(ErrorCodeRecordFailed, http.StatusServiceUnavailable)
+			return NewRelayAuditError(ErrorCodeRecordFailed, http.StatusServiceUnavailable)
 		}
 	}
 
@@ -109,16 +103,10 @@ func CheckRelayRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo, request
 
 // CheckMidjourneyRequest 在业务提交前执行 Midjourney 请求的同步审计门禁。
 func CheckMidjourneyRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo) *taskdto.MidjourneyResponse {
-	mgr := GetManager()
-	if mgr == nil {
-		return nil
+	cfg, gErr := CheckAuditClientAccess(c)
+	if gErr != nil {
+		return toMjError(gErr.Code, gErr.HTTPStatus)
 	}
-
-	if mgr.IsDegraded() {
-		return toMjError(ErrorCodeConfigDegraded, http.StatusServiceUnavailable)
-	}
-
-	cfg := mgr.Active()
 	if !cfg.Enabled {
 		return nil
 	}
@@ -221,9 +209,17 @@ func extractGroup(c *gin.Context, relayInfo *relaycommon.RelayInfo) string {
 	return group
 }
 
-func toRelayError(code string, statusCode int) *types.NewAPIError {
+func auditErrorMessage(code string) string {
+	if code == ErrorCodeCodexCLIRequired {
+		return CodexCLIRequiredMessage
+	}
+	return code
+}
+
+// NewRelayAuditError 将审计错误包装为带 SkipRetry 的 Relay 错误，供 HTTP 与 Realtime 握手共用。
+func NewRelayAuditError(code string, statusCode int) *types.NewAPIError {
 	return types.NewErrorWithStatusCode(
-		errors.New(code),
+		errors.New(auditErrorMessage(code)),
 		types.ErrorCode(code),
 		statusCode,
 		types.ErrOptionWithSkipRetry(),
@@ -233,7 +229,7 @@ func toRelayError(code string, statusCode int) *types.NewAPIError {
 func toMjError(code string, statusCode int) *taskdto.MidjourneyResponse {
 	return &taskdto.MidjourneyResponse{
 		Code:        statusCode,
-		Description: code,
+		Description: auditErrorMessage(code),
 		Result:      code,
 	}
 }
@@ -244,7 +240,7 @@ const ContextKeyTaskAuditDone = "prompt_audit_done"
 func toTaskError(code string, statusCode int) *taskdto.TaskError {
 	return &taskdto.TaskError{
 		Code:       code,
-		Message:    code,
+		Message:    auditErrorMessage(code),
 		StatusCode: statusCode,
 		LocalError: true,
 	}
@@ -256,16 +252,10 @@ func CheckTaskRequest(c *gin.Context, relayInfo *relaycommon.RelayInfo, auditMet
 		return nil
 	}
 
-	mgr := GetManager()
-	if mgr == nil {
-		return nil
+	cfg, gErr := CheckAuditClientAccess(c)
+	if gErr != nil {
+		return toTaskError(gErr.Code, gErr.HTTPStatus)
 	}
-
-	if mgr.IsDegraded() {
-		return toTaskError(ErrorCodeConfigDegraded, http.StatusServiceUnavailable)
-	}
-
-	cfg := mgr.Active()
 	if !cfg.Enabled {
 		return nil
 	}
@@ -370,16 +360,10 @@ func CheckTaskPluginProtocolRequest(c *gin.Context, relayInfo *relaycommon.Relay
 		return nil
 	}
 
-	mgr := GetManager()
-	if mgr == nil {
-		return nil
+	cfg, gErr := CheckAuditClientAccess(c)
+	if gErr != nil {
+		return toTaskError(gErr.Code, gErr.HTTPStatus)
 	}
-
-	if mgr.IsDegraded() {
-		return toTaskError(ErrorCodeConfigDegraded, http.StatusServiceUnavailable)
-	}
-
-	cfg := mgr.Active()
 	if !cfg.Enabled {
 		return nil
 	}

@@ -3,7 +3,7 @@
   "name": "prompt-audit-codex-cli-only",
   "title": "提示词审计仅允许 Codex CLI",
   "description": "全局提示词审计开启时，仅允许标准 Codex CLI Originator 进入受保护的生成与任务提交链路；其他客户端在送审和上游调用前返回 503。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

@@ -15,7 +15,7 @@
 ## Requirements
 
 - **R1 — 开关语义**：审计关闭或 Manager 未初始化时，不执行 Codex CLI 客户端限制，所有现有请求行为保持不变。
-- **R2 — 判定契约**：审计开启时，读取入站 HTTP `Originator`，Trim 后按 ASCII 大小写不敏感做**完整值**匹配。首版显式允许 `codex_cli_rs` 与 `codex-cli`；空值、未知值、仅包含允许值的前后缀字符串均不允许。
+- **R2 — 判定契约**：审计开启时，读取入站 HTTP `Originator`，Trim 后按 ASCII 大小写不敏感做**完整值**匹配。显式允许 `codex_cli_rs`、`codex-cli`、`codex-tui` 与 `codex_exec`；空值、未知值、仅包含允许值的前后缀字符串均不允许。VS Code / Desktop / Monitor 等非 CLI 第一方客户端不允许。
 - **R3 — 辅助头不授权**：`User-Agent`、`Session_id`、`Thread_id`、`X-Codex-*` 等头不得单独授予访问权限；它们不参与首版硬判定。
 - **R4 — 全局优先级**：客户端限制按全局审计开关生效，执行顺序早于审计分组匹配。审计开启后，非 Codex CLI 即使位于未纳入扫描范围的分组，也必须返回 503。
 - **R5 — 入口覆盖**：同一判定契约覆盖普通 HTTP Relay、Realtime WebSocket 握手、Midjourney 提交、原生 Task 提交及 Task Plugin Responses Bridge 提交。只查询任务或资源、不承载提示词提交的接口不受影响。
@@ -28,7 +28,7 @@
 ## Acceptance Criteria
 
 - [ ] **AC1（R1）**：审计关闭时，无 `Originator`、未知 `Originator` 和合法 Codex `Originator` 均不因本功能被拒绝。
-- [ ] **AC2（R2、R3）**：审计开启时，`codex_cli_rs`、`CODEX_CLI_RS`、`codex-cli` 及带首尾空白的等价值通过；空值、`curl`、`my-codex_cli_rs-wrapper` 以及只有 Codex `User-Agent`/会话头的请求均返回 503。
+- [ ] **AC2（R2、R3）**：审计开启时，`codex_cli_rs`、`CODEX_CLI_RS`、`codex-cli`、`codex-tui`、`codex_exec` 及带首尾空白的等价值通过；空值、`curl`、`my-codex_cli_rs-wrapper`、`codex_vscode`、`Codex Desktop` 以及只有 Codex `User-Agent`/会话头的请求均返回 503。
 - [ ] **AC3（R4）**：审计开启且请求分组不匹配扫描范围时，非 Codex CLI 仍返回 503；合法 Codex CLI 继续按既有分组规则放行且不送审。
 - [ ] **AC4（R5、R8）**：HTTP Relay、Midjourney、Task 与 Task Plugin 非 Codex CLI 提交均返回状态 503、错误码 `prompt_audit_codex_cli_required` 和固定安全消息。
 - [ ] **AC5（R6）**：所有非 Codex CLI 拒绝用例均断言 Evaluator 调用数、EventStore 写入数、预扣费次数和业务上游调用数为 0。

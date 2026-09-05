@@ -78,31 +78,30 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	//originalModel := common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
 
 	var (
-		newAPIError *types.NewAPIError
-		ws          *websocket.Conn
+		newAPIError      *types.NewAPIError
+		ws               *websocket.Conn
+		clientWSUpgraded bool
 	)
-
-	if relayFormat == types.RelayFormatOpenAIRealtime {
-		var err error
-		ws, err = upgrader.Upgrade(c.Writer, c.Request, nil)
-		if err != nil {
-			helper.WssError(c, ws, types.NewError(err, types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry()).ToOpenAIError())
-			return
-		}
-		defer ws.Close()
-	}
 
 	defer func() {
 		if newAPIError != nil {
 			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
-			switch relayFormat {
-			case types.RelayFormatOpenAIRealtime:
+			if relayFormat == types.RelayFormatOpenAIRealtime && clientWSUpgraded {
 				helper.WssError(c, ws, newAPIError.ToOpenAIError())
+				return
+			}
+			switch relayFormat {
 			case types.RelayFormatClaude:
+				// Claude 既有外壳只有 type/message；补上稳定错误码，避免协议差异丢掉 code。
+				claudeErr := newAPIError.ToClaudeError()
 				c.JSON(newAPIError.StatusCode, gin.H{
-					"type":  "error",
-					"error": newAPIError.ToClaudeError(),
+					"type": "error",
+					"error": gin.H{
+						"type":    claudeErr.Type,
+						"message": claudeErr.Message,
+						"code":    newAPIError.GetErrorCode(),
+					},
 				})
 			default:
 				c.JSON(newAPIError.StatusCode, gin.H{
@@ -111,6 +110,22 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			}
 		}
 	}()
+
+	if relayFormat == types.RelayFormatOpenAIRealtime {
+		// 审计开启后，非 Codex CLI 必须在 Upgrade 前返回普通 HTTP 503。
+		if _, gErr := promptaudit.CheckAuditClientAccess(c); gErr != nil {
+			newAPIError = promptaudit.NewRelayAuditError(gErr.Code, gErr.HTTPStatus)
+			return
+		}
+		var err error
+		ws, err = upgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+			helper.WssError(c, ws, types.NewError(err, types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry()).ToOpenAIError())
+			return
+		}
+		clientWSUpgraded = true
+		defer ws.Close()
+	}
 
 	request, err := helper.GetAndValidateRequest(c, relayFormat)
 	if err != nil {

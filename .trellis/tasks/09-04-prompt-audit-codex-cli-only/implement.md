@@ -16,7 +16,7 @@
 
 - `service/promptaudit/types.go`：新增稳定错误码 `ErrorCodeCodexCLIRequired` 和固定安全消息的单一来源。
 - `service/promptaudit/`：新增可供 controller 与各 gate 复用的客户端识别/前置门禁函数。
-- 允许值仅为规范化后的 `codex_cli_rs`、`codex-cli`；完整值匹配，不做子串、正则或 User-Agent 回退。
+- 允许值仅为规范化后的 `codex_cli_rs`、`codex-cli`、`codex-tui`、`codex_exec`；完整值匹配，不做子串、正则或 User-Agent 回退。
 - 使用现有错误载体表达 code/status/message/retryable，不为一个状态再创建平行错误体系。
 
 ### 测试

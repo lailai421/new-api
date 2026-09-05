@@ -88,7 +88,8 @@ func TestCheckRelayRequest_DisabledAndGroupMismatch(t *testing.T) {
 	assert.Equal(t, 0, eval.called)
 	cleanup()
 
-	// 2. 分组未命中 -> 直接放行
+	// 2. 分组未命中 + 合法 Codex CLI -> 直接放行且不送审
+	attachCodexCLI(c)
 	cleanup = setupGateTest(t, ActiveConfig{
 		Enabled:   true,
 		AllGroups: false,
@@ -97,6 +98,21 @@ func TestCheckRelayRequest_DisabledAndGroupMismatch(t *testing.T) {
 	err = CheckRelayRequest(c, info, req)
 	assert.Nil(t, err)
 	assert.Equal(t, 0, eval.called)
+	cleanup()
+
+	// 3. 分组未命中 + 非 Codex CLI -> 仍因客户端门禁 503
+	attachOriginator(c, "curl")
+	cleanup = setupGateTest(t, ActiveConfig{
+		Enabled:   true,
+		AllGroups: false,
+		GroupsMap: map[string]struct{}{"vip": {}},
+	}, false, eval, store)
+	err = CheckRelayRequest(c, info, req)
+	require.NotNil(t, err)
+	assert.Equal(t, http.StatusServiceUnavailable, err.StatusCode)
+	assert.Equal(t, types.ErrorCode(ErrorCodeCodexCLIRequired), err.GetErrorCode())
+	assert.Equal(t, 0, eval.called)
+	assert.Len(t, store.recorded, 0)
 	cleanup()
 }
 
@@ -135,6 +151,7 @@ func TestCheckRelayRequest_UnsupportedProtocol(t *testing.T) {
 	cleanup := setupGateTest(t, ActiveConfig{Enabled: true, AllGroups: true}, false, eval, store)
 	defer cleanup()
 
+	attachCodexCLI(c)
 	type unknownReq struct {
 		dto.BaseRequest
 	}
@@ -157,6 +174,7 @@ func TestCheckRelayRequest_NoPromptPasses(t *testing.T) {
 	cleanup := setupGateTest(t, ActiveConfig{Enabled: true, AllGroups: true}, false, eval, store)
 	defer cleanup()
 
+	attachCodexCLI(c)
 	emptyReq := &dto.GeneralOpenAIRequest{
 		Model:    "gpt-4o",
 		Messages: []dto.Message{{Role: "user", Content: "    "}},
@@ -188,6 +206,7 @@ func TestCheckRelayRequest_BlockDecision(t *testing.T) {
 	cleanup := setupGateTest(t, ActiveConfig{Enabled: true, AllGroups: true}, false, eval, store)
 	defer cleanup()
 
+	attachCodexCLI(c)
 	err := CheckRelayRequest(c, info, req)
 	require.NotNil(t, err)
 	assert.Equal(t, http.StatusForbidden, err.StatusCode)
@@ -223,6 +242,7 @@ func TestCheckRelayRequest_EvaluatorUnavailableAndInvalid(t *testing.T) {
 	cleanup := setupGateTest(t, ActiveConfig{Enabled: true, AllGroups: true}, false, eval, store)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
+	attachCodexCLI(c)
 
 	err := CheckRelayRequest(c, info, req)
 	require.NotNil(t, err)
@@ -241,6 +261,7 @@ func TestCheckRelayRequest_EvaluatorUnavailableAndInvalid(t *testing.T) {
 	cleanup = setupGateTest(t, ActiveConfig{Enabled: true, AllGroups: true}, false, evalInvalid, store)
 	w = httptest.NewRecorder()
 	c, _ = gin.CreateTestContext(w)
+	attachCodexCLI(c)
 
 	err = CheckRelayRequest(c, info, req)
 	require.NotNil(t, err)
@@ -275,6 +296,7 @@ func TestCheckRelayRequest_AllowAndRecordFailed(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
+	attachCodexCLI(c)
 	err := CheckRelayRequest(c, info, req)
 	assert.Nil(t, err)
 	assert.Len(t, storeOK.recorded, 1)
@@ -290,6 +312,7 @@ func TestCheckRelayRequest_AllowAndRecordFailed(t *testing.T) {
 
 	w = httptest.NewRecorder()
 	c, _ = gin.CreateTestContext(w)
+	attachCodexCLI(c)
 	err = CheckRelayRequest(c, info, req)
 	require.NotNil(t, err)
 	assert.Equal(t, http.StatusServiceUnavailable, err.StatusCode)
@@ -306,6 +329,7 @@ func TestCheckRelayRequest_AllowAndRecordFailed(t *testing.T) {
 
 	w = httptest.NewRecorder()
 	c, _ = gin.CreateTestContext(w)
+	attachCodexCLI(c)
 	err = CheckRelayRequest(c, info, req)
 	assert.Nil(t, err)
 	assert.Len(t, storeSkip.recorded, 0)
@@ -330,6 +354,7 @@ func TestCheckMidjourneyRequest_Gate(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/mj/task/fetch", nil)
+	attachCodexCLI(c)
 
 	mjErr := CheckMidjourneyRequest(c, infoQuery)
 	assert.Nil(t, mjErr)
@@ -353,6 +378,7 @@ func TestCheckMidjourneyRequest_Gate(t *testing.T) {
 	c, _ = gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/mj/submit/imagine", bytes.NewReader(bodyBytes))
 	c.Request.Header.Set("Content-Type", "application/json")
+	attachCodexCLI(c)
 
 	infoImagine := &relaycommon.RelayInfo{
 		RelayMode:       relayconstant.RelayModeMidjourneyImagine,

@@ -1,9 +1,11 @@
 package controller
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -48,6 +50,13 @@ func (m *relayMockEventStore) Record(ctx context.Context, snapshot promptaudit.P
 	return nil
 }
 
+func attachCodexCLIHeader(c *gin.Context) {
+	if c.Request == nil {
+		c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+	}
+	c.Request.Header.Set("Originator", "codex_cli_rs")
+}
+
 func TestRelay_PromptAudit_Block(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -82,6 +91,7 @@ func TestRelay_PromptAudit_Block(t *testing.T) {
 
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(bodyBytes))
 	c.Request.Header.Set("Content-Type", "application/json")
+	attachCodexCLIHeader(c)
 	common.SetContextKey(c, common.RequestIdKey, "req-test-block-001")
 	common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
 	common.SetContextKey(c, constant.ContextKeyOriginalModel, "gpt-4o")
@@ -162,6 +172,9 @@ func TestRelay_PromptAudit_FailClosed(t *testing.T) {
 			})
 			c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(bodyBytes))
 			c.Request.Header.Set("Content-Type", "application/json")
+			if !tt.degraded {
+				attachCodexCLIHeader(c)
+			}
 			common.SetContextKey(c, common.RequestIdKey, "req-failclosed-"+tt.name)
 			common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
 			common.SetContextKey(c, constant.ContextKeyOriginalModel, "gpt-4o")
@@ -198,6 +211,7 @@ func TestRelayMidjourney_PromptAudit(t *testing.T) {
 	})
 	c.Request = httptest.NewRequest(http.MethodPost, "/mj/submit/imagine", bytes.NewReader(bodyBytes))
 	c.Request.Header.Set("Content-Type", "application/json")
+	attachCodexCLIHeader(c)
 	common.SetContextKey(c, common.RequestIdKey, "req-mj-block-001")
 	common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
 	c.Set("relay_mode", relayconstant.RelayModeMidjourneyImagine)
@@ -242,6 +256,7 @@ func TestRelay_ExplicitZeroValuesPreserved(t *testing.T) {
 	}`
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(bodyJSON))
 	c.Request.Header.Set("Content-Type", "application/json")
+	attachCodexCLIHeader(c)
 
 	// 验证 CheckRelayRequest 之后 body 依然保留显式 0, 0.0, false
 	info := &relaycommon.RelayInfo{UsingGroup: "default"}
@@ -290,7 +305,8 @@ func TestRelay_PromptAudit_DisabledAndGroupMismatch(t *testing.T) {
 	assert.Equal(t, 0, eval.called)
 	cleanup()
 
-	// 2. 分组未命中 -> CheckRelayRequest 放行且不调用 Evaluator
+	// 2. 分组未命中 + 合法 Codex CLI -> CheckRelayRequest 放行且不调用 Evaluator
+	attachCodexCLIHeader(c)
 	activeCfgGroup := promptaudit.ActiveConfig{
 		Enabled:   true,
 		AllGroups: false,
@@ -336,6 +352,7 @@ func TestRelay_PromptAudit_RecordFailed(t *testing.T) {
 	})
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(bodyBytes))
 	c.Request.Header.Set("Content-Type", "application/json")
+	attachCodexCLIHeader(c)
 	common.SetContextKey(c, common.RequestIdKey, "req-record-failed-001")
 	common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
 	common.SetContextKey(c, constant.ContextKeyOriginalModel, "gpt-4o")
@@ -362,6 +379,7 @@ func TestRelayMidjourney_QueryActionsBypass(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/mj/task/123/fetch", nil)
+	attachCodexCLIHeader(c)
 
 	info := &relaycommon.RelayInfo{
 		RelayMode:       relayconstant.RelayModeMidjourneyTaskFetch,
@@ -425,6 +443,7 @@ func TestRelayMidjourney_PromptWithImageURL(t *testing.T) {
 
 	c.Request = httptest.NewRequest(http.MethodPost, "/mj/submit/imagine", bytes.NewReader(bodyBytes))
 	c.Request.Header.Set("Content-Type", "application/json")
+	attachCodexCLIHeader(c)
 	info := &relaycommon.RelayInfo{
 		RelayMode:       relayconstant.RelayModeMidjourneyImagine,
 		UsingGroup:      "default",
@@ -434,4 +453,220 @@ func TestRelayMidjourney_PromptWithImageURL(t *testing.T) {
 	mjErr := promptaudit.CheckMidjourneyRequest(c, info)
 	assert.Nil(t, mjErr)
 	assert.Equal(t, 1, eval.called)
+}
+
+type hijackCountingWriter struct {
+	*httptest.ResponseRecorder
+	hijackCount int
+}
+
+func (w *hijackCountingWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	w.hijackCount++
+	return nil, nil, errors.New("hijack should not be called before Codex CLI gate")
+}
+
+func TestRelay_PromptAudit_CodexCLIRequired(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	eval := &relayMockEvaluator{}
+	store := &relayMockEventStore{}
+	cleanup := promptaudit.SetGlobalForTestHelper(promptaudit.ActiveConfig{Enabled: true, AllGroups: true}, false, eval, store)
+	defer cleanup()
+
+	secretPrompt := "SUPER_SECRET_CANARY_PROMPT_DO_NOT_LEAK"
+	originatorCanary := "CANARY_ORIGINATOR_DO_NOT_ECHO"
+	uaCanary := "CANARY_USER_AGENT_DO_NOT_ECHO"
+
+	tests := []struct {
+		name          string
+		relayFormat   relaytypes.RelayFormat
+		path          string
+		requestID     string
+		setOriginator string
+		model         string
+	}{
+		{name: "openai unknown originator", relayFormat: relaytypes.RelayFormatOpenAI, path: "/v1/chat/completions", requestID: "req-unknown-originator", setOriginator: originatorCanary, model: "gpt-4o"},
+		{name: "openai missing originator", relayFormat: relaytypes.RelayFormatOpenAI, path: "/v1/chat/completions", requestID: "req-missing-originator", model: "gpt-4o"},
+		{name: "openai curl originator", relayFormat: relaytypes.RelayFormatOpenAI, path: "/v1/chat/completions", requestID: "req-unknown-client", setOriginator: "curl", model: "gpt-4o"},
+		{name: "claude wrapper originator", relayFormat: relaytypes.RelayFormatClaude, path: "/v1/messages", requestID: "req-claude-wrapper", setOriginator: "my-codex_cli_rs-wrapper", model: "claude-3-5-sonnet-latest"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			eval.called = 0
+			store.recorded = nil
+
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			body := map[string]any{
+				"model": tt.model,
+				"messages": []map[string]string{
+					{"role": "user", "content": secretPrompt},
+				},
+			}
+			if tt.relayFormat == relaytypes.RelayFormatClaude {
+				body["max_tokens"] = 16
+			}
+			bodyBytes, err := common.Marshal(body)
+			require.NoError(t, err)
+			c.Request = httptest.NewRequest(http.MethodPost, tt.path, bytes.NewReader(bodyBytes))
+			c.Request.Header.Set("Content-Type", "application/json")
+			c.Request.Header.Set("User-Agent", uaCanary)
+			if tt.setOriginator != "" {
+				c.Request.Header.Set("Originator", tt.setOriginator)
+			}
+			common.SetContextKey(c, common.RequestIdKey, tt.requestID)
+			common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
+			common.SetContextKey(c, constant.ContextKeyOriginalModel, tt.model)
+
+			Relay(c, tt.relayFormat)
+
+			assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+			var resp struct {
+				Type  string `json:"type"`
+				Error struct {
+					Message string `json:"message"`
+					Type    string `json:"type"`
+					Code    any    `json:"code"`
+				} `json:"error"`
+			}
+			require.NoError(t, common.Unmarshal(w.Body.Bytes(), &resp))
+			assert.Equal(t, promptaudit.ErrorCodeCodexCLIRequired, resp.Error.Code)
+			assert.Contains(t, resp.Error.Message, promptaudit.CodexCLIRequiredMessage)
+			if tt.relayFormat == relaytypes.RelayFormatClaude {
+				assert.Equal(t, "error", resp.Type)
+			}
+			assert.Equal(t, 0, eval.called)
+			assert.Len(t, store.recorded, 0)
+			assert.False(t, c.GetBool("preconsumed_quota_flag"))
+			assert.Empty(t, c.GetStringSlice("use_channel"))
+			assert.NotContains(t, w.Body.String(), secretPrompt)
+			assert.NotContains(t, w.Body.String(), originatorCanary)
+			assert.NotContains(t, w.Body.String(), uaCanary)
+			if tt.setOriginator != "" && !strings.Contains(promptaudit.CodexCLIRequiredMessage, tt.setOriginator) {
+				assert.NotContains(t, w.Body.String(), tt.setOriginator)
+			}
+		})
+	}
+}
+
+func TestRelayMidjourney_PromptAudit_CodexCLIRequired(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	eval := &relayMockEvaluator{}
+	store := &relayMockEventStore{}
+	cleanup := promptaudit.SetGlobalForTestHelper(promptaudit.ActiveConfig{Enabled: true, AllGroups: true}, false, eval, store)
+	defer cleanup()
+
+	canaryPrompt := "CANARY_MJ_PROMPT_DO_NOT_LEAK"
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	bodyBytes, _ := common.Marshal(map[string]any{
+		"prompt": canaryPrompt,
+	})
+	c.Request = httptest.NewRequest(http.MethodPost, "/mj/submit/imagine", bytes.NewReader(bodyBytes))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Request.Header.Set("Originator", "Codex CLI")
+	common.SetContextKey(c, common.RequestIdKey, "req-mj-display-originator")
+	common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
+	c.Set("relay_mode", relayconstant.RelayModeMidjourneyImagine)
+
+	RelayMidjourney(c)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	var mjResp struct {
+		Code        int    `json:"code"`
+		Description string `json:"description"`
+		Result      string `json:"result"`
+		Type        string `json:"type"`
+	}
+	require.NoError(t, common.Unmarshal(w.Body.Bytes(), &mjResp))
+	assert.Equal(t, http.StatusServiceUnavailable, mjResp.Code)
+	assert.Equal(t, promptaudit.ErrorCodeCodexCLIRequired, mjResp.Result)
+	assert.Equal(t, promptaudit.CodexCLIRequiredMessage, mjResp.Description)
+	assert.Equal(t, "prompt_audit_error", mjResp.Type)
+	assert.Equal(t, 0, eval.called)
+	assert.Len(t, store.recorded, 0)
+	assert.False(t, c.GetBool("preconsumed_quota_flag"))
+	assert.Empty(t, c.GetStringSlice("use_channel"))
+	assert.NotContains(t, w.Body.String(), canaryPrompt)
+}
+
+func TestRelay_Realtime_PromptAudit_CodexCLIRequired(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	eval := &relayMockEvaluator{}
+	store := &relayMockEventStore{}
+	cleanup := promptaudit.SetGlobalForTestHelper(promptaudit.ActiveConfig{Enabled: true, AllGroups: true}, false, eval, store)
+	defer cleanup()
+
+	hijack := &hijackCountingWriter{ResponseRecorder: httptest.NewRecorder()}
+	c, _ := gin.CreateTestContext(hijack)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/realtime", nil)
+	c.Request.Header.Set("Upgrade", "websocket")
+	c.Request.Header.Set("Connection", "Upgrade")
+	c.Request.Header.Set("Sec-WebSocket-Version", "13")
+	c.Request.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	c.Request.Header.Set("Sec-WebSocket-Protocol", "realtime")
+	c.Request.Header.Set("Originator", "curl")
+	c.Request.Header.Set("User-Agent", "CANARY_UA_REALTIME")
+	common.SetContextKey(c, common.RequestIdKey, "req-rt-unknown-client")
+	common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
+
+	Relay(c, relaytypes.RelayFormatOpenAIRealtime)
+
+	assert.Equal(t, http.StatusServiceUnavailable, hijack.Code)
+	assert.NotEqual(t, http.StatusSwitchingProtocols, hijack.Code)
+	assert.Equal(t, 0, hijack.hijackCount, "client websocket upgrade must not run")
+	var resp struct {
+		Error struct {
+			Message string `json:"message"`
+			Code    any    `json:"code"`
+		} `json:"error"`
+	}
+	require.NoError(t, common.Unmarshal(hijack.Body.Bytes(), &resp))
+	assert.Equal(t, promptaudit.ErrorCodeCodexCLIRequired, resp.Error.Code)
+	assert.Contains(t, resp.Error.Message, promptaudit.CodexCLIRequiredMessage)
+	assert.Equal(t, 0, eval.called)
+	assert.Len(t, store.recorded, 0)
+	assert.False(t, c.GetBool("preconsumed_quota_flag"))
+	assert.Empty(t, c.GetStringSlice("use_channel"))
+	assert.NotContains(t, hijack.Body.String(), "curl")
+	assert.NotContains(t, hijack.Body.String(), "CANARY_UA_REALTIME")
+}
+
+func TestRelay_PromptAudit_CodexCLIRequired_GroupMismatch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	eval := &relayMockEvaluator{}
+	store := &relayMockEventStore{}
+	cleanup := promptaudit.SetGlobalForTestHelper(promptaudit.ActiveConfig{
+		Enabled:   true,
+		AllGroups: false,
+		GroupsMap: map[string]struct{}{"vip": {}},
+	}, false, eval, store)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	bodyBytes, _ := common.Marshal(map[string]any{
+		"model": "gpt-4o",
+		"messages": []map[string]string{
+			{"role": "user", "content": "group mismatch canary"},
+		},
+	})
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(bodyBytes))
+	c.Request.Header.Set("Content-Type", "application/json")
+	common.SetContextKey(c, common.RequestIdKey, "req-group-mismatch-non-codex")
+	common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
+
+	Relay(c, relaytypes.RelayFormatOpenAI)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Contains(t, w.Body.String(), promptaudit.ErrorCodeCodexCLIRequired)
+	assert.Contains(t, w.Body.String(), promptaudit.CodexCLIRequiredMessage)
+	assert.Equal(t, 0, eval.called)
+	assert.Len(t, store.recorded, 0)
+	assert.False(t, c.GetBool("preconsumed_quota_flag"))
+	assert.Empty(t, c.GetStringSlice("use_channel"))
 }

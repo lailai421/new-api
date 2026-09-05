@@ -43,6 +43,10 @@ const (
 	ErrorCodeUnsupportedProtocol   = "prompt_audit_unsupported_protocol"
 	ErrorCodeConfigConflict        = "prompt_audit_config_conflict"
 	ErrorCodeEncryptionKeyRequired = "prompt_audit_encryption_key_required"
+	ErrorCodeCodexCLIRequired      = "prompt_audit_codex_cli_required"
+
+	// CodexCLIRequiredMessage 是客户端前置门禁的固定安全消息，禁止回显请求头。
+	CodexCLIRequiredMessage = "Prompt audit is enabled; only Codex CLI requests are accepted."
 
 	// 节点协议与默认配置
 	ProtocolOpenAICompatible    = "openai_compatible"
