@@ -168,6 +168,50 @@ User prompt:
 	assert.Equal(t, "你是什么模型？", snapshot.RedactedPreview)
 }
 
+const sampleCodexCatchUp = `Write a brief catch-up for a user returning to this Codex task. In at most 40 words and one or two plain-text sentences, explain the objective, what was completed or learned, and the next step or blocker. Mention changed files, tests, approvals, or requested decisions only when relevant. Never claim changes were made or tests passed unless the conversation confirms it. If the task is complete, say so instead of inventing more work. Use the user's language; omit greetings, markdown, lists, and tool chatter.
+
+Recent conversation:
+User: 好的，方案已经审核通过，请你帮我编写能在新的上下文窗口执行09-04-prompt-audit-codex-cli-only任务的提示词
+
+Assistant: 已生成并保存新窗口执行提示词：
+[handoff-prompt.md](/Users/laiyanfei/code/python/ai-project/github/new-api/.trellis/tasks/09-04-prompt-audit-codex-cli-only)`
+
+func TestCodexContext_CatchUp_DroppedOrKept(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	// 1. 标准回看摘要模板整段丢弃；同请求里的真实 user 仍送审
+	segments := []PromptSegment{
+		{Role: "user", Content: sampleCodexCatchUp},
+		{Role: "user", Content: "你是什么模型？"},
+	}
+	snapshot, err := BuildPromptSnapshot(c, nil, "chat", "gpt-4o", segments, false)
+	require.NoError(t, err)
+	assert.Equal(t, "你是什么模型？", snapshot.ScanText)
+	assert.Equal(t, "你是什么模型？", snapshot.FullPrompt)
+	assert.Equal(t, 1, snapshot.MessageCount)
+	assert.NotContains(t, snapshot.FullPrompt, "catch-up")
+	assert.NotContains(t, snapshot.FullPrompt, "Recent conversation:")
+
+	// 2. 用户讨论 catch-up 但不是完整模板：整段仍送审
+	discuss := "请帮我写一段 catch-up：Write a brief catch-up for a user returning to this Codex task."
+	snapshotDiscuss, err := BuildPromptSnapshot(c, nil, "chat", "gpt-4o", []PromptSegment{
+		{Role: "user", Content: discuss},
+	}, false)
+	require.NoError(t, err)
+	assert.Equal(t, discuss, snapshotDiscuss.FullPrompt)
+	assert.Equal(t, discuss, snapshotDiscuss.ScanText)
+
+	// 3. 仅有前缀、没有独立行 Recent conversation:：整段仍送审
+	prefixOnly := CodexCatchUpPrefix + " 请用中文总结当前进度。"
+	snapshotPrefix, err := BuildPromptSnapshot(c, nil, "chat", "gpt-4o", []PromptSegment{
+		{Role: "user", Content: prefixOnly},
+	}, false)
+	require.NoError(t, err)
+	assert.Equal(t, prefixOnly, snapshotPrefix.FullPrompt)
+}
+
 // AC4: 用户输入提到当前工作目录但无标签，整段仍送审、仍落库。
 func TestCodexContext_UserMention_Kept(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -253,6 +297,24 @@ func TestCodexContext_OnlyContextOrTemplate_NoHttp_NoStore(t *testing.T) {
 	assert.Equal(t, int32(0), atomic.LoadInt32(&guardCalls))
 
 	err = store.Record(ctx, snapshotTitle, decTitle, true)
+	require.NoError(t, err)
+
+	// 3. 只有 Codex 回看摘要模板
+	catchUpOnlySegments := []PromptSegment{
+		{Role: "user", Content: sampleCodexCatchUp},
+	}
+	snapshotCatchUp, err := BuildPromptSnapshot(c, nil, "chat", "gpt-4o", catchUpOnlySegments, false)
+	require.NoError(t, err)
+	assert.Empty(t, snapshotCatchUp.ScanText)
+	assert.Empty(t, snapshotCatchUp.FullPrompt)
+
+	decCatchUp, err := evaluator.Evaluate(ctx, cfg, snapshotCatchUp)
+	require.NoError(t, err)
+	assert.Equal(t, DecisionAllow, decCatchUp.Kind)
+	assert.True(t, decCatchUp.AllowNextStage)
+	assert.Equal(t, int32(0), atomic.LoadInt32(&guardCalls))
+
+	err = store.Record(ctx, snapshotCatchUp, decCatchUp, true)
 	require.NoError(t, err)
 
 	// 确认数据库没有插入任何事件

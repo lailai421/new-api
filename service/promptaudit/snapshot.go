@@ -176,7 +176,8 @@ func StripAgentsMdEnvelopes(segments []PromptSegment) []PromptSegment {
 }
 
 const (
-	CodexTitlePrefix = "Generate a concise, single-line task title of at most "
+	CodexTitlePrefix   = "Generate a concise, single-line task title of at most "
+	CodexCatchUpPrefix = "Write a brief catch-up for a user returning to this Codex task."
 )
 
 type pairedTag struct {
@@ -287,6 +288,37 @@ func UnwrapCodexThreadTitle(segments []PromptSegment) []PromptSegment {
 		}
 
 		seg.Content = trimmed
+		result = append(result, seg)
+	}
+	return result
+}
+
+var codexCatchUpRecentConversationPattern = regexp.MustCompile(`(?m)^Recent conversation:[ \t]*\r?\n?`)
+
+// isCodexCatchUpTemplate 判定是否为 Codex 回看摘要自动请求。
+// 契约：trim 后以 CodexCatchUpPrefix 起头，且含独立行 "Recent conversation:"。
+// 用户讨论 catch-up 但没有这套完整模板时，不得误伤。
+func isCodexCatchUpTemplate(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	if !strings.HasPrefix(trimmed, CodexCatchUpPrefix) {
+		return false
+	}
+	return codexCatchUpRecentConversationPattern.FindStringIndex(trimmed) != nil
+}
+
+// StripCodexCatchUp 丢弃 Codex 回看摘要自动 user 段。
+// 匹配模板的整段丢弃（摘要里的 User/Assistant 是会话回放，不是新的用户输入）；
+// 非 user 分段与未匹配模板的 user 分段原样保留。
+func StripCodexCatchUp(segments []PromptSegment) []PromptSegment {
+	result := make([]PromptSegment, 0, len(segments))
+	for _, seg := range segments {
+		if !seg.IsUser() {
+			result = append(result, seg)
+			continue
+		}
+		if isCodexCatchUpTemplate(seg.Content) {
+			continue
+		}
 		result = append(result, seg)
 	}
 	return result
@@ -474,10 +506,11 @@ func BuildPromptSnapshot(
 		return PromptSnapshot{}, ErrNoPrompt
 	}
 
-	// 剥离 Codex 注入的 AGENTS.md 信封、成对上下文标记块（如环境上下文）及标题生成模板，确保后续只包含用户真实提示词
+	// 剥离 Codex 注入的 AGENTS.md 信封、成对上下文标记块、标题生成模板及回看摘要模板，确保后续只包含用户真实提示词
 	cleanSegments := StripAgentsMdEnvelopes(segments)
 	cleanSegments = StripCodexContextualUser(cleanSegments)
 	cleanSegments = UnwrapCodexThreadTitle(cleanSegments)
+	cleanSegments = StripCodexCatchUp(cleanSegments)
 	normalized := NormalizeSegments(cleanSegments)
 
 	fullPrompt := JoinUserSegments(normalized)
