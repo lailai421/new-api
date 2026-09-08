@@ -133,7 +133,7 @@ func (s *LLMClassifierScanner) Scan(ctx context.Context, endpoint ActiveEndpoint
 	}
 
 	// 针对 DeepSeek V4 等默认开启思考链的模型，注入 thinking: {"type": "disabled"} 禁用思考链，
-	// 避免思考过程耗尽 256 max_tokens 导致正文截断为空。
+	// 避免思考过程耗尽 max_tokens 导致正文截断为空。
 	// 规范化模型名（TrimSpace、ToLower、取最后一个 "/" 之后）以识别 provider/model 形式及大小写变体。
 	trimmedModel := strings.TrimSpace(modelName)
 	normalizedModel := strings.ToLower(trimmedModel)

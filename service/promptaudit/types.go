@@ -58,8 +58,8 @@ const (
 
 	// 阈值与边界
 	DefaultTimeoutMS         = 3000
-	DefaultLLMTimeoutMS      = 8000
-	DefaultLLMMaxTokens      = 256
+	DefaultLLMTimeoutMS      = 15000
+	DefaultLLMMaxTokens      = 1024
 	DefaultLLMSeed           = 42
 	MinTimeoutMS             = 100
 	MaxTimeoutMS             = 30000

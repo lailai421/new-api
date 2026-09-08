@@ -291,7 +291,7 @@ func TestLLMClassifierScanner_Scan_RequestShape(t *testing.T) {
 	assert.Equal(t, "Bearer sk-test-token-secret", capturedAuth)
 	assert.Equal(t, "application/json", capturedContentType)
 	assert.Equal(t, "deepseek-chat", capturedPayload["model"])
-	assert.Equal(t, float64(256), capturedPayload["max_tokens"])
+	assert.Equal(t, float64(DefaultLLMMaxTokens), capturedPayload["max_tokens"])
 	assert.Equal(t, float64(0), capturedPayload["temperature"])
 	assert.Equal(t, float64(42), capturedPayload["seed"])
 	// 契约规定不发送 response_format
