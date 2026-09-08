@@ -327,22 +327,28 @@ func TestExtractOpenAIContent_ReasoningDiagnostics(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, `{"safety":"Safe","categories":[]}`, content)
 
-	// 2. content 为空但有 reasoning_content -> 抛出包含 reasoning_content 说明的错误
-	reasoningBody := []byte(`{"choices":[{"message":{"content":"","reasoning_content":"thinking process here..."}}]}`)
-	_, err = extractOpenAIContent(reasoningBody)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "model output reasoning_content instead of standard content")
+	// 2. content 为空但有 reasoning_content -> 降级返回 reasoning_content
+	reasoningBody := []byte(`{"choices":[{"message":{"content":"","reasoning_content":"{\"safety\":\"Safe\",\"categories\":[]}"}}]}`)
+	content, err = extractOpenAIContent(reasoningBody)
+	require.NoError(t, err)
+	assert.Equal(t, `{"safety":"Safe","categories":[]}`, content)
 
-	// 3. content 为 null 但有 reasoning_content -> 抛出包含 reasoning_content 说明的错误
-	nullContentBody := []byte(`{"choices":[{"message":{"content":null,"reasoning_content":"thinking process here..."}}]}`)
-	_, err = extractOpenAIContent(nullContentBody)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "model output reasoning_content instead of standard content")
+	// 3. content 为 null 但有 reasoning -> 降级返回 reasoning
+	nullContentBody := []byte(`{"choices":[{"message":{"content":null,"reasoning":"{\"safety\":\"Safe\",\"categories\":[]}"}}]}`)
+	content, err = extractOpenAIContent(nullContentBody)
+	require.NoError(t, err)
+	assert.Equal(t, `{"safety":"Safe","categories":[]}`, content)
 
-	// 4. content 纯空且无 reasoning_content -> 原始 empty guard response content
+	// 4. content 纯空且无 reasoning/reasoning_content -> 原始 empty guard response content
 	emptyBody := []byte(`{"choices":[{"message":{"content":""}}]}`)
 	_, err = extractOpenAIContent(emptyBody)
 	require.Error(t, err)
 	assert.Equal(t, "empty guard response content", err.Error())
+
+	// 5. content 纯空带 finish_reason
+	emptyWithFinishBody := []byte(`{"choices":[{"message":{"content":""},"finish_reason":"length"}]}`)
+	_, err = extractOpenAIContent(emptyWithFinishBody)
+	require.Error(t, err)
+	assert.Equal(t, "empty guard response content (finish_reason: length)", err.Error())
 }
 

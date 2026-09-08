@@ -296,21 +296,10 @@ func extractOpenAIContent(body []byte) (string, error) {
 
 	choice := resp.Choices[0]
 	content := choice.Message.Content
+	var extracted string
 	switch v := content.(type) {
 	case string:
-		if strings.TrimSpace(v) == "" {
-			if strings.TrimSpace(choice.Message.ReasoningContent) != "" {
-				return "", errors.New("empty guard response content: model output reasoning_content instead of standard content, please disable thinking mode or use a non-reasoning model")
-			}
-			if strings.TrimSpace(choice.Message.Reasoning) != "" {
-				return "", fmt.Errorf("empty guard response content: model output reasoning instead of standard content (finish_reason: %s)", choice.FinishReason)
-			}
-			if choice.FinishReason != "" {
-				return "", fmt.Errorf("empty guard response content (finish_reason: %s)", choice.FinishReason)
-			}
-			return "", errors.New("empty guard response content")
-		}
-		return v, nil
+		extracted = strings.TrimSpace(v)
 	case []any:
 		parts := make([]string, 0, len(v))
 		for _, item := range v {
@@ -322,28 +311,27 @@ func extractOpenAIContent(body []byte) (string, error) {
 				parts = append(parts, text)
 			}
 		}
-		if len(parts) == 0 {
-			if strings.TrimSpace(choice.Message.ReasoningContent) != "" {
-				return "", errors.New("empty guard response parts: model output reasoning_content instead of standard content, please disable thinking mode or use a non-reasoning model")
-			}
-			if strings.TrimSpace(choice.Message.Reasoning) != "" {
-				return "", fmt.Errorf("empty guard response parts: model output reasoning instead of standard content (finish_reason: %s)", choice.FinishReason)
-			}
-			if choice.FinishReason != "" {
-				return "", fmt.Errorf("empty guard response parts (finish_reason: %s)", choice.FinishReason)
-			}
-			return "", errors.New("empty guard response parts")
-		}
-		return strings.Join(parts, "\n"), nil
-	default:
-		if strings.TrimSpace(choice.Message.ReasoningContent) != "" {
-			return "", errors.New("unexpected guard response content format: model output reasoning_content instead of standard content, please disable thinking mode or use a non-reasoning model")
-		}
-		if strings.TrimSpace(choice.Message.Reasoning) != "" {
-			return "", fmt.Errorf("unexpected guard response content format: model output reasoning instead of standard content (finish_reason: %s)", choice.FinishReason)
-		}
-		return "", errors.New("unexpected guard response content format")
+		extracted = strings.TrimSpace(strings.Join(parts, "\n"))
 	}
+
+	if extracted != "" {
+		return extracted, nil
+	}
+
+	// 降级容错：部分推理模型（如 DeepSeek V4 在第三方中转开启思考链时）可能会在思考阶段直接输出判定结果，
+	// 导致 content 为空但 reasoning / reasoning_content 包含合法分类结果。
+	reasoning := strings.TrimSpace(choice.Message.Reasoning)
+	if reasoning == "" {
+		reasoning = strings.TrimSpace(choice.Message.ReasoningContent)
+	}
+	if reasoning != "" {
+		return reasoning, nil
+	}
+
+	if choice.FinishReason != "" {
+		return "", fmt.Errorf("empty guard response content (finish_reason: %s)", choice.FinishReason)
+	}
+	return "", errors.New("empty guard response content")
 }
 
 type decisionCacheEntry struct {
