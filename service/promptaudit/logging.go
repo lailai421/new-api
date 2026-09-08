@@ -42,6 +42,7 @@ var allowedLogFields = map[string]struct{}{
 	"latency_ms":          {},
 	"status":              {},
 	"error_code":          {},
+	"error_detail":        {},
 	"upstream_dispatched": {},
 	"billing_preconsumed": {},
 }

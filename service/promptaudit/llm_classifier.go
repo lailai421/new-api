@@ -253,11 +253,15 @@ func ParseLLMClassifier(content string, enabledScanners []string) (*NormalizedRe
 	}
 
 	// 3. 两路均失败 -> prompt_guard_invalid_response (不可重试，503，失败关闭)
+	preview := trimmed
+	if len([]rune(preview)) > 150 {
+		preview = string([]rune(preview)[:150]) + "..."
+	}
 	return nil, &GuardError{
 		Code:       ErrorCodeInvalidResponse,
 		HTTPStatus: 503,
 		Retryable:  false,
-		Cause:      errors.New("response cannot be parsed as valid JSON classification or fallback text"),
+		Cause:      fmt.Errorf("response cannot be parsed as valid JSON classification or fallback text (content_preview=%q)", preview),
 	}
 }
 

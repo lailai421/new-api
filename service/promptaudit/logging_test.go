@@ -23,6 +23,7 @@ func TestSanitizeLogFields_WhitelistEnforcement(t *testing.T) {
 		"latency_ms":          int64(150),
 		"status":              "blocked",
 		"error_code":          "prompt_guard_blocked",
+		"error_detail":        "empty guard response content",
 		"upstream_dispatched": false,
 
 		// 禁止泄漏的敏感字段
@@ -46,6 +47,7 @@ func TestSanitizeLogFields_WhitelistEnforcement(t *testing.T) {
 	assert.Equal(t, int64(150), sanitized["latency_ms"])
 	assert.Equal(t, "blocked", sanitized["status"])
 	assert.Equal(t, "prompt_guard_blocked", sanitized["error_code"])
+	assert.Equal(t, "empty guard response content", sanitized["error_detail"])
 	assert.Equal(t, false, sanitized["upstream_dispatched"])
 
 	// 验证敏感字段全部被坚决丢弃

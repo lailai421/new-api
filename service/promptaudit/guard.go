@@ -263,12 +263,35 @@ func extractOpenAIContent(body []byte) (string, error) {
 			Message struct {
 				Content          any    `json:"content"`
 				ReasoningContent string `json:"reasoning_content"`
+				Reasoning        string `json:"reasoning"`
 			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+			Code    any    `json:"code"`
+		} `json:"error"`
 	}
 
-	if err := common.Unmarshal(body, &resp); err != nil || len(resp.Choices) == 0 {
-		return "", errors.New("invalid openai completion response envelope")
+	if err := common.Unmarshal(body, &resp); err != nil {
+		preview := strings.TrimSpace(string(body))
+		if len([]rune(preview)) > 150 {
+			preview = string([]rune(preview)[:150]) + "..."
+		}
+		return "", fmt.Errorf("invalid openai completion response envelope: %w (raw=%q)", err, preview)
+	}
+
+	if resp.Error.Message != "" {
+		return "", fmt.Errorf("upstream api error: %s (type: %s, code: %v)", resp.Error.Message, resp.Error.Type, resp.Error.Code)
+	}
+
+	if len(resp.Choices) == 0 {
+		preview := strings.TrimSpace(string(body))
+		if len([]rune(preview)) > 150 {
+			preview = string([]rune(preview)[:150]) + "..."
+		}
+		return "", fmt.Errorf("invalid openai completion response envelope: no choices (raw=%q)", preview)
 	}
 
 	choice := resp.Choices[0]
@@ -278,6 +301,12 @@ func extractOpenAIContent(body []byte) (string, error) {
 		if strings.TrimSpace(v) == "" {
 			if strings.TrimSpace(choice.Message.ReasoningContent) != "" {
 				return "", errors.New("empty guard response content: model output reasoning_content instead of standard content, please disable thinking mode or use a non-reasoning model")
+			}
+			if strings.TrimSpace(choice.Message.Reasoning) != "" {
+				return "", fmt.Errorf("empty guard response content: model output reasoning instead of standard content (finish_reason: %s)", choice.FinishReason)
+			}
+			if choice.FinishReason != "" {
+				return "", fmt.Errorf("empty guard response content (finish_reason: %s)", choice.FinishReason)
 			}
 			return "", errors.New("empty guard response content")
 		}
@@ -297,12 +326,21 @@ func extractOpenAIContent(body []byte) (string, error) {
 			if strings.TrimSpace(choice.Message.ReasoningContent) != "" {
 				return "", errors.New("empty guard response parts: model output reasoning_content instead of standard content, please disable thinking mode or use a non-reasoning model")
 			}
+			if strings.TrimSpace(choice.Message.Reasoning) != "" {
+				return "", fmt.Errorf("empty guard response parts: model output reasoning instead of standard content (finish_reason: %s)", choice.FinishReason)
+			}
+			if choice.FinishReason != "" {
+				return "", fmt.Errorf("empty guard response parts (finish_reason: %s)", choice.FinishReason)
+			}
 			return "", errors.New("empty guard response parts")
 		}
 		return strings.Join(parts, "\n"), nil
 	default:
 		if strings.TrimSpace(choice.Message.ReasoningContent) != "" {
 			return "", errors.New("unexpected guard response content format: model output reasoning_content instead of standard content, please disable thinking mode or use a non-reasoning model")
+		}
+		if strings.TrimSpace(choice.Message.Reasoning) != "" {
+			return "", fmt.Errorf("unexpected guard response content format: model output reasoning instead of standard content (finish_reason: %s)", choice.FinishReason)
 		}
 		return "", errors.New("unexpected guard response content format")
 	}
@@ -659,6 +697,7 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 		failFields := copyLogFields(baseFields)
 		failFields["status"] = "failed"
 		failFields["error_code"] = ErrorCodeUnavailable
+		failFields["error_detail"] = "no usable enabled guard endpoints"
 		latencyMS := int(time.Since(start).Milliseconds())
 		failFields["latency_ms"] = latencyMS
 		LogGuardWarn(ctx, EventGuardFailed, failFields)
@@ -803,6 +842,11 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 		failFields["status"] = "failed"
 		failFields["error_code"] = code
 		failFields["latency_ms"] = latencyMS
+		if gErr != nil && gErr.Cause != nil {
+			failFields["error_detail"] = gErr.Cause.Error()
+		} else if err != nil {
+			failFields["error_detail"] = err.Error()
+		}
 		LogGuardWarn(ctx, EventGuardFailed, failFields)
 		if gErr != nil {
 			gErr.LatencyMS = latencyMS
@@ -822,6 +866,7 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 		failFields := copyLogFields(baseFields)
 		failFields["status"] = "failed"
 		failFields["error_code"] = ErrorCodeInvalidResponse
+		failFields["error_detail"] = "singleflight returned invalid decision"
 		failFields["latency_ms"] = latencyMS
 		LogGuardWarn(ctx, EventGuardFailed, failFields)
 		return nil, &GuardError{
